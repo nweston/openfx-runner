@@ -15,6 +15,24 @@ fn make_bundle(path: std::path::PathBuf) -> Result<OfxBundle, Box<dyn Error>> {
     return Ok(OfxBundle { path, plist });
 }
 
+fn library_path(bundle: &OfxBundle) -> std::path::PathBuf {
+    let lib = bundle
+        .plist
+        .as_dictionary()
+        .unwrap()
+        .get("CFBundleExecutable")
+        .unwrap()
+        .as_string()
+        .unwrap();
+    if cfg!(target_os = "linux") {
+        return bundle.path.join("Contents/Linux-x86-64").join(lib);
+    } else if cfg!(windows) {
+        return bundle.path.join("Contents/Win64").join(lib);
+    } else {
+        return bundle.path.join("Contents/MacOS").join(lib);
+    }
+}
+
 fn ofx_bundles() -> Vec<OfxBundle> {
     if let Ok(dir) = fs::read_dir("/usr/OFX/Plugins/") {
         let x = dir.filter_map(|entry| {
@@ -35,10 +53,18 @@ fn ofx_bundles() -> Vec<OfxBundle> {
 
 fn main() {
     for bundle in ofx_bundles() {
+        let count;
+        unsafe {
+            let lib = libloading::Library::new(library_path(&bundle)).unwrap();
+            let func: libloading::Symbol<unsafe extern "C" fn() -> i32> =
+                lib.get(b"OfxGetNumberOfPlugins").unwrap();
+            count = func();
+        }
         println!(
-            "{}, {:?}",
+            "{}, {} => {}",
             bundle.path.display(),
-            bundle.plist.as_dictionary().unwrap()
-        )
+            library_path(&bundle).display(),
+            count
+        );
     }
 }
