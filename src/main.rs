@@ -31,6 +31,7 @@ struct OfxPluginRaw {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 struct OfxPlugin {
     plugin_api: String,
     api_version: i32,
