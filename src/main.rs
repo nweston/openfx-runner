@@ -1,5 +1,27 @@
 use std::error::Error;
+use std::ffi::{c_char, c_int, c_uint, c_void, CStr};
 use std::fs;
+
+#[allow(non_snake_case)]
+#[repr(C)]
+struct OfxPluginRaw {
+    pluginApi: *const c_char,
+    apiVersion: c_int,
+    pluginIdentifier: *const c_char,
+    pluginVersionMajor: c_uint,
+    pluginVersionMinor: c_uint,
+    setHost: *const c_void, // (*setHost)(OfxHost *host)
+    mainEntry: *const c_void,
+}
+
+#[derive(Debug)]
+struct OfxPlugin {
+    plugin_api: String,
+    api_version: i32,
+    plugin_identifier: String,
+    plugin_version_major: u32,
+    plugin_version_minor: u32,
+}
 
 fn plist_path(bundle_path: &std::path::Path) -> std::path::PathBuf {
     return bundle_path.join("Contents/Info.plist");
@@ -51,14 +73,32 @@ fn ofx_bundles() -> Vec<OfxBundle> {
     return Vec::new();
 }
 
+unsafe fn cstr_to_string(s: *const c_char) -> String {
+    CStr::from_ptr(s).to_str().unwrap().to_string()
+}
+
 fn main() {
     for bundle in ofx_bundles() {
         let count;
+        let mut plugins = Vec::new();
+
         unsafe {
             let lib = libloading::Library::new(library_path(&bundle)).unwrap();
             let func: libloading::Symbol<unsafe extern "C" fn() -> i32> =
                 lib.get(b"OfxGetNumberOfPlugins").unwrap();
             count = func();
+            let func2: libloading::Symbol<unsafe extern "C" fn(i32) -> *const OfxPluginRaw> =
+                lib.get(b"OfxGetPlugin").unwrap();
+            for i in 0..count {
+                let p = &*func2(i);
+                plugins.push(OfxPlugin {
+                    plugin_api: cstr_to_string(p.pluginApi),
+                    api_version: p.apiVersion,
+                    plugin_identifier: cstr_to_string(p.pluginIdentifier),
+                    plugin_version_major: p.pluginVersionMajor,
+                    plugin_version_minor: p.pluginVersionMinor,
+                })
+            }
         }
         println!(
             "{}, {} => {}",
@@ -66,5 +106,9 @@ fn main() {
             library_path(&bundle).display(),
             count
         );
+        for p in plugins {
+            println!("  {:?}", p);
+        }
+        println!()
     }
 }
