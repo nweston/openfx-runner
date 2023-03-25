@@ -2,6 +2,17 @@ use std::error::Error;
 use std::ffi::{c_char, c_int, c_uint, c_void, CStr};
 use std::fs;
 
+struct OfxPropertySet {}
+type OfxPropertySetHandle = *mut OfxPropertySet;
+type OfxStatus = c_int;
+
+#[allow(non_snake_case)]
+#[repr(C)]
+struct OfxHost {
+    host: OfxPropertySetHandle,
+    fetchSuite: extern "C" fn(OfxPropertySetHandle, *const c_char, c_int) -> *const c_void,
+}
+
 #[allow(non_snake_case)]
 #[repr(C)]
 struct OfxPluginRaw {
@@ -10,8 +21,13 @@ struct OfxPluginRaw {
     pluginIdentifier: *const c_char,
     pluginVersionMajor: c_uint,
     pluginVersionMinor: c_uint,
-    setHost: *const c_void, // (*setHost)(OfxHost *host)
-    mainEntry: *const c_void,
+    setHost: extern "C" fn(*const OfxHost),
+    mainEntry: extern "C" fn(
+        *const c_char,
+        *const c_void,
+        OfxPropertySetHandle,
+        OfxPropertySetHandle,
+    ) -> OfxStatus,
 }
 
 #[derive(Debug)]
@@ -21,6 +37,13 @@ struct OfxPlugin {
     plugin_identifier: String,
     plugin_version_major: u32,
     plugin_version_minor: u32,
+    set_host: extern "C" fn(*const OfxHost),
+    main_entry: extern "C" fn(
+        *const c_char,
+        *const c_void,
+        OfxPropertySetHandle,
+        OfxPropertySetHandle,
+    ) -> OfxStatus,
 }
 
 fn plist_path(bundle_path: &std::path::Path) -> std::path::PathBuf {
@@ -97,6 +120,8 @@ fn main() {
                     plugin_identifier: cstr_to_string(p.pluginIdentifier),
                     plugin_version_major: p.pluginVersionMajor,
                     plugin_version_minor: p.pluginVersionMinor,
+                    set_host: p.setHost,
+                    main_entry: p.mainEntry,
                 })
             }
         }
