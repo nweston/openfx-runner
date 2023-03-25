@@ -1,5 +1,5 @@
 use std::error::Error;
-use std::ffi::{c_char, c_int, c_uint, c_void, CStr};
+use std::ffi::{c_char, c_int, c_uint, c_void, CStr, CString};
 use std::fs;
 
 struct OfxPropertySet {}
@@ -45,6 +45,19 @@ struct OfxPlugin {
         OfxPropertySetHandle,
         OfxPropertySetHandle,
     ) -> OfxStatus,
+}
+
+impl OfxPlugin {
+    fn call_action(
+        &self,
+        action: &str,
+        handle: *const c_void,
+        in_args: OfxPropertySetHandle,
+        out_args: OfxPropertySetHandle,
+    ) -> OfxStatus {
+        let c_action = CString::new(action).unwrap();
+        (self.main_entry)(c_action.as_ptr(), handle, in_args, out_args)
+    }
 }
 
 fn plist_path(bundle_path: &std::path::Path) -> std::path::PathBuf {
@@ -101,7 +114,22 @@ unsafe fn cstr_to_string(s: *const c_char) -> String {
     CStr::from_ptr(s).to_str().unwrap().to_string()
 }
 
+#[allow(unused_variables)]
+extern "C" fn fetch_suite(
+    host: OfxPropertySetHandle,
+    name: *const c_char,
+    version: c_int,
+) -> *const c_void {
+    std::ptr::null()
+}
+
 fn main() {
+    let mut host_props = OfxPropertySet {};
+    let host = OfxHost {
+        host: &mut host_props,
+        fetchSuite: fetch_suite,
+    };
+
     for bundle in ofx_bundles() {
         let count;
         let mut plugins = Vec::new();
@@ -133,7 +161,23 @@ fn main() {
             count
         );
         for p in plugins {
-            println!("  {:?}", p);
+            (p.set_host)(&host);
+            let stat = p.call_action(
+                "OfxActionLoad",
+                std::ptr::null(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            );
+            let stat2 = p.call_action(
+                "OfxActionUnload",
+                std::ptr::null(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            );
+            println!(
+                "  {:?}, Load returned {}, Unload returned {}",
+                p, stat, stat2
+            );
         }
         println!()
     }
