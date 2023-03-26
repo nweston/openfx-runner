@@ -1,10 +1,22 @@
 use std::error::Error;
-use std::ffi::{c_char, c_int, c_uint, c_void, CStr, CString};
+use std::ffi::{c_char, c_double, c_int, c_uint, c_void, CStr, CString};
 use std::fs;
 
 struct OfxPropertySet {}
 type OfxPropertySetHandle = *mut OfxPropertySet;
+type OfxImageEffectHandle = *mut c_void;
+type OfxParamSetHandle = *mut c_void;
+type OfxImageClipHandle = *mut c_void;
+type OfxImageMemoryHandle = *mut c_void;
 type OfxStatus = c_int;
+type OfxTime = c_double;
+#[allow(dead_code)]
+struct OfxRectD {
+    x1: c_double,
+    y1: c_double,
+    x2: c_double,
+    y2: c_double,
+}
 
 #[allow(non_snake_case)]
 #[repr(C)]
@@ -46,6 +58,162 @@ struct OfxPlugin {
         OfxPropertySetHandle,
     ) -> OfxStatus,
 }
+
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+fn getPropertySet(
+    imageEffect: OfxImageEffectHandle,
+    propHandle: *mut OfxPropertySetHandle,
+) -> OfxStatus {
+    panic!("Not implemented!")
+}
+
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+fn getParamSet(imageEffect: OfxImageEffectHandle, paramSet: *mut OfxParamSetHandle) -> OfxStatus {
+    panic!("Not implemented!")
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+fn clipDefine(
+    imageEffect: OfxImageEffectHandle,
+    name: *const char,
+    propertySet: *mut OfxPropertySetHandle,
+) -> OfxStatus {
+    panic!("Not implemented!")
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+fn clipGetHandle(
+    imageEffect: OfxImageEffectHandle,
+    name: *const char,
+    clip: *mut OfxImageClipHandle,
+    propertySet: *mut OfxPropertySetHandle,
+) -> OfxStatus {
+    panic!("Not implemented!")
+}
+
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+fn clipGetPropertySet(
+    clip: OfxImageClipHandle,
+    propHandle: *mut OfxPropertySetHandle,
+) -> OfxStatus {
+    panic!("Not implemented!")
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+fn clipGetImage(
+    clip: OfxImageClipHandle,
+    time: OfxTime,
+    region: *const OfxRectD,
+    imageHandle: *mut OfxPropertySetHandle,
+) -> OfxStatus {
+    panic!("Not implemented!")
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+fn clipReleaseImage(imageHandle: OfxPropertySetHandle) -> OfxStatus {
+    panic!("Not implemented!")
+}
+
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+fn clipGetRegionOfDefinition(
+    clip: OfxImageClipHandle,
+    time: OfxTime,
+    bounds: *const OfxRectD,
+) -> OfxStatus {
+    panic!("Not implemented!")
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+fn abort(imageEffect: OfxImageEffectHandle) -> c_int {
+    panic!("Not implemented!")
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+fn imageMemoryAlloc(
+    instanceHandle: OfxImageEffectHandle,
+    nBytes: usize,
+    memoryHandle: *mut OfxImageMemoryHandle,
+) -> OfxStatus {
+    panic!("Not implemented!")
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+fn imageMemoryFree(memoryHandle: OfxImageMemoryHandle) -> OfxStatus {
+    panic!("Not implemented!")
+}
+
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+fn imageMemoryLock(memoryHandle: OfxImageMemoryHandle, returnedPtr: *mut *mut c_void) -> OfxStatus {
+    panic!("Not implemented!")
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+fn imageMemoryUnlock(memoryHandle: OfxImageMemoryHandle) -> OfxStatus {
+    panic!("Not implemented!")
+}
+
+#[allow(non_snake_case)]
+#[allow(dead_code)]
+#[repr(C)]
+struct OfxImageEffectSuiteV1 {
+    getPropertySet:
+        fn(imageEffect: OfxImageEffectHandle, propHandle: *mut OfxPropertySetHandle) -> OfxStatus,
+    getParamSet:
+        fn(imageEffect: OfxImageEffectHandle, paramSet: *mut OfxParamSetHandle) -> OfxStatus,
+    clipDefine: fn(
+        imageEffect: OfxImageEffectHandle,
+        name: *const char,
+        propertySet: *mut OfxPropertySetHandle,
+    ) -> OfxStatus,
+    clipGetHandle: fn(
+        imageEffect: OfxImageEffectHandle,
+        name: *const char,
+        clip: *mut OfxImageClipHandle,
+        propertySet: *mut OfxPropertySetHandle,
+    ) -> OfxStatus,
+    clipGetPropertySet:
+        fn(clip: OfxImageClipHandle, propHandle: *mut OfxPropertySetHandle) -> OfxStatus,
+    clipGetImage: fn(
+        clip: OfxImageClipHandle,
+        time: OfxTime,
+        region: *const OfxRectD,
+        imageHandle: *mut OfxPropertySetHandle,
+    ) -> OfxStatus,
+    clipReleaseImage: fn(imageHandle: OfxPropertySetHandle) -> OfxStatus,
+    clipGetRegionOfDefinition:
+        fn(clip: OfxImageClipHandle, time: OfxTime, bounds: *const OfxRectD) -> OfxStatus,
+    abort: fn(imageEffect: OfxImageEffectHandle) -> c_int,
+    imageMemoryAlloc: fn(
+        instanceHandle: OfxImageEffectHandle,
+        nBytes: usize,
+        memoryHandle: *mut OfxImageMemoryHandle,
+    ) -> OfxStatus,
+    imageMemoryFree: fn(memoryHandle: OfxImageMemoryHandle) -> OfxStatus,
+    imageMemoryLock:
+        fn(memoryHandle: OfxImageMemoryHandle, returnedPtr: *mut *mut c_void) -> OfxStatus,
+    imageMemoryUnlock: fn(memoryHandle: OfxImageMemoryHandle) -> OfxStatus,
+}
+
+const IMAGE_EFFECT_SUITE: OfxImageEffectSuiteV1 = OfxImageEffectSuiteV1 {
+    getPropertySet,
+    getParamSet,
+    clipDefine,
+    clipGetHandle,
+    clipGetPropertySet,
+    clipGetImage,
+    clipReleaseImage,
+    clipGetRegionOfDefinition,
+    abort,
+    imageMemoryAlloc,
+    imageMemoryFree,
+    imageMemoryLock,
+    imageMemoryUnlock,
+};
 
 impl OfxPlugin {
     fn call_action(
@@ -120,7 +288,14 @@ extern "C" fn fetch_suite(
     name: *const c_char,
     version: c_int,
 ) -> *const c_void {
-    std::ptr::null()
+    let suite = unsafe { CStr::from_ptr(name).to_str().unwrap() };
+    println!("fetch_suite {} {}", suite, version);
+    if suite == "OfxImageEffectSuite" {
+        assert!(version == 1);
+        &IMAGE_EFFECT_SUITE as *const _ as *const c_void
+    } else {
+        std::ptr::null()
+    }
 }
 
 fn main() {
