@@ -59,6 +59,20 @@ struct OfxPlugin {
     ) -> OfxStatus,
 }
 
+impl OfxPlugin {
+    fn call_action(
+        &self,
+        action: &str,
+        handle: *const c_void,
+        in_args: OfxPropertySetHandle,
+        out_args: OfxPropertySetHandle,
+    ) -> OfxStatus {
+        let c_action = CString::new(action).unwrap();
+        (self.main_entry)(c_action.as_ptr(), handle, in_args, out_args)
+    }
+}
+
+// ========= ImageEffectSuite =========
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
 fn getPropertySet(
@@ -215,18 +229,310 @@ const IMAGE_EFFECT_SUITE: OfxImageEffectSuiteV1 = OfxImageEffectSuiteV1 {
     imageMemoryUnlock,
 };
 
-impl OfxPlugin {
-    fn call_action(
-        &self,
-        action: &str,
-        handle: *const c_void,
-        in_args: OfxPropertySetHandle,
-        out_args: OfxPropertySetHandle,
-    ) -> OfxStatus {
-        let c_action = CString::new(action).unwrap();
-        (self.main_entry)(c_action.as_ptr(), handle, in_args, out_args)
-    }
+// ========= Property Suite =========
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+fn propSetPointer(
+    properties: OfxPropertySetHandle,
+    property: *const c_char,
+    index: c_int,
+    value: *mut c_void,
+) -> OfxStatus {
+    panic!("Not implemented!");
 }
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+fn propSetString(
+    properties: OfxPropertySetHandle,
+    property: *const c_char,
+    index: c_int,
+    value: *const c_char,
+) -> OfxStatus {
+    panic!("Not implemented!");
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+fn propSetDouble(
+    properties: OfxPropertySetHandle,
+    property: *const c_char,
+    index: c_int,
+    value: c_double,
+) -> OfxStatus {
+    panic!("Not implemented!");
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+fn propSetInt(
+    properties: OfxPropertySetHandle,
+    property: *const c_char,
+    index: c_int,
+    value: c_int,
+) -> OfxStatus {
+    panic!("Not implemented!");
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+fn propSetPointerN(
+    properties: OfxPropertySetHandle,
+    property: *const c_char,
+    count: c_int,
+    value: *const *mut c_void,
+) -> OfxStatus {
+    panic!("Not implemented!");
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+fn propSetStringN(
+    properties: OfxPropertySetHandle,
+    property: *const c_char,
+    count: c_int,
+    value: *const *const c_char,
+) -> OfxStatus {
+    panic!("Not implemented!");
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+fn propSetDoubleN(
+    properties: OfxPropertySetHandle,
+    property: *const c_char,
+    count: c_int,
+    value: *const c_double,
+) -> OfxStatus {
+    panic!("Not implemented!");
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+fn propSetIntN(
+    properties: OfxPropertySetHandle,
+    property: *const c_char,
+    count: c_int,
+    value: *const c_int,
+) -> OfxStatus {
+    panic!("Not implemented!");
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+fn propGetPointer(
+    properties: OfxPropertySetHandle,
+    property: *const c_char,
+    index: c_int,
+    value: *mut *mut c_void,
+) -> OfxStatus {
+    panic!("Not implemented!");
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+fn propGetString(
+    properties: OfxPropertySetHandle,
+    property: *const c_char,
+    index: c_int,
+    value: *mut *mut c_char,
+) -> OfxStatus {
+    panic!("Not implemented!");
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+fn propGetDouble(
+    properties: OfxPropertySetHandle,
+    property: *const c_char,
+    index: c_int,
+    value: *mut c_double,
+) -> OfxStatus {
+    panic!("Not implemented!");
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+fn propGetInt(
+    properties: OfxPropertySetHandle,
+    property: *const c_char,
+    index: c_int,
+    value: *mut c_int,
+) -> OfxStatus {
+    panic!("Not implemented!");
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+fn propGetPointerN(
+    properties: OfxPropertySetHandle,
+    property: *const c_char,
+    count: c_int,
+    value: *mut *mut c_void,
+) -> OfxStatus {
+    panic!("Not implemented!");
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+fn propGetStringN(
+    properties: OfxPropertySetHandle,
+    property: *const c_char,
+    count: c_int,
+    value: *mut *mut c_char,
+) -> OfxStatus {
+    panic!("Not implemented!");
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+fn propGetDoubleN(
+    properties: OfxPropertySetHandle,
+    property: *const c_char,
+    count: c_int,
+    value: *mut c_double,
+) -> OfxStatus {
+    panic!("Not implemented!");
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+fn propGetIntN(
+    properties: OfxPropertySetHandle,
+    property: *const c_char,
+    count: c_int,
+    value: *mut c_int,
+) -> OfxStatus {
+    panic!("Not implemented!");
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+fn propReset(properties: OfxPropertySetHandle, property: *const c_char) -> OfxStatus {
+    panic!("Not implemented!");
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+fn propGetDimension(
+    properties: OfxPropertySetHandle,
+    property: *const c_char,
+    count: *mut c_int,
+) -> OfxStatus {
+    panic!("Not implemented!");
+}
+
+#[allow(non_snake_case)]
+#[allow(dead_code)]
+#[repr(C)]
+struct OfxPropertySuiteV1 {
+    propSetPointer: fn(
+        properties: OfxPropertySetHandle,
+        property: *const c_char,
+        index: c_int,
+        value: *mut c_void,
+    ) -> OfxStatus,
+    propSetString: fn(
+        properties: OfxPropertySetHandle,
+        property: *const c_char,
+        index: c_int,
+        value: *const c_char,
+    ) -> OfxStatus,
+    propSetDouble: fn(
+        properties: OfxPropertySetHandle,
+        property: *const c_char,
+        index: c_int,
+        value: c_double,
+    ) -> OfxStatus,
+    propSetInt: fn(
+        properties: OfxPropertySetHandle,
+        property: *const c_char,
+        index: c_int,
+        value: c_int,
+    ) -> OfxStatus,
+    propSetPointerN: fn(
+        properties: OfxPropertySetHandle,
+        property: *const c_char,
+        count: c_int,
+        value: *const *mut c_void,
+    ) -> OfxStatus,
+    propSetStringN: fn(
+        properties: OfxPropertySetHandle,
+        property: *const c_char,
+        count: c_int,
+        value: *const *const c_char,
+    ) -> OfxStatus,
+    propSetDoubleN: fn(
+        properties: OfxPropertySetHandle,
+        property: *const c_char,
+        count: c_int,
+        value: *const c_double,
+    ) -> OfxStatus,
+    propSetIntN: fn(
+        properties: OfxPropertySetHandle,
+        property: *const c_char,
+        count: c_int,
+        value: *const c_int,
+    ) -> OfxStatus,
+    propGetPointer: fn(
+        properties: OfxPropertySetHandle,
+        property: *const c_char,
+        index: c_int,
+        value: *mut *mut c_void,
+    ) -> OfxStatus,
+    propGetString: fn(
+        properties: OfxPropertySetHandle,
+        property: *const c_char,
+        index: c_int,
+        value: *mut *mut c_char,
+    ) -> OfxStatus,
+    propGetDouble: fn(
+        properties: OfxPropertySetHandle,
+        property: *const c_char,
+        index: c_int,
+        value: *mut c_double,
+    ) -> OfxStatus,
+    propGetInt: fn(
+        properties: OfxPropertySetHandle,
+        property: *const c_char,
+        index: c_int,
+        value: *mut c_int,
+    ) -> OfxStatus,
+    propGetPointerN: fn(
+        properties: OfxPropertySetHandle,
+        property: *const c_char,
+        count: c_int,
+        value: *mut *mut c_void,
+    ) -> OfxStatus,
+    propGetStringN: fn(
+        properties: OfxPropertySetHandle,
+        property: *const c_char,
+        count: c_int,
+        value: *mut *mut c_char,
+    ) -> OfxStatus,
+    propGetDoubleN: fn(
+        properties: OfxPropertySetHandle,
+        property: *const c_char,
+        count: c_int,
+        value: *mut c_double,
+    ) -> OfxStatus,
+    propGetIntN: fn(
+        properties: OfxPropertySetHandle,
+        property: *const c_char,
+        count: c_int,
+        value: *mut c_int,
+    ) -> OfxStatus,
+    propReset: fn(properties: OfxPropertySetHandle, property: *const c_char) -> OfxStatus,
+    propGetDimension: fn(
+        properties: OfxPropertySetHandle,
+        property: *const c_char,
+        count: *mut c_int,
+    ) -> OfxStatus,
+}
+
+const PROPERTY_SUITE: OfxPropertySuiteV1 = OfxPropertySuiteV1 {
+    propSetPointer,
+    propSetString,
+    propSetDouble,
+    propSetInt,
+    propSetPointerN,
+    propSetStringN,
+    propSetDoubleN,
+    propSetIntN,
+    propGetPointer,
+    propGetString,
+    propGetDouble,
+    propGetInt,
+    propGetPointerN,
+    propGetStringN,
+    propGetDoubleN,
+    propGetIntN,
+    propReset,
+    propGetDimension,
+};
 
 fn plist_path(bundle_path: &std::path::Path) -> std::path::PathBuf {
     return bundle_path.join("Contents/Info.plist");
@@ -293,6 +599,9 @@ extern "C" fn fetch_suite(
     if suite == "OfxImageEffectSuite" {
         assert!(version == 1);
         &IMAGE_EFFECT_SUITE as *const _ as *const c_void
+    } else if suite == "OfxPropertySuite" {
+        assert!(version == 1);
+        &PROPERTY_SUITE as *const _ as *const c_void
     } else {
         std::ptr::null()
     }
