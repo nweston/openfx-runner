@@ -1010,7 +1010,6 @@ extern "C" fn fetch_suite(
     version: c_int,
 ) -> *const c_void {
     let suite = unsafe { CStr::from_ptr(name).to_str().unwrap() };
-    println!("fetch_suite {} {}", suite, version);
     if suite == "OfxImageEffectSuite" {
         assert!(version == 1);
         &IMAGE_EFFECT_SUITE as *const _ as *const c_void
@@ -1030,6 +1029,7 @@ extern "C" fn fetch_suite(
         assert!(version == 1);
         &MESSAGE_SUITE as *const _ as *const c_void
     } else {
+        println!("fetch_suite: {} v{} is not available", suite, version);
         std::ptr::null()
     }
 }
