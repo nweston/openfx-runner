@@ -22,7 +22,8 @@ struct OfxRectD {
 #[repr(C)]
 struct OfxHost {
     host: OfxPropertySetHandle,
-    fetchSuite: extern "C" fn(OfxPropertySetHandle, *const c_char, c_int) -> *const c_void,
+    fetchSuite:
+        extern "C" fn(OfxPropertySetHandle, *const c_char, c_int) -> *const c_void,
 }
 
 #[allow(non_snake_case)]
@@ -84,7 +85,10 @@ fn getPropertySet(
 
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
-fn getParamSet(imageEffect: OfxImageEffectHandle, paramSet: *mut OfxParamSetHandle) -> OfxStatus {
+fn getParamSet(
+    imageEffect: OfxImageEffectHandle,
+    paramSet: *mut OfxParamSetHandle,
+) -> OfxStatus {
     panic!("Not implemented!")
 }
 #[allow(non_snake_case)]
@@ -162,7 +166,10 @@ fn imageMemoryFree(memoryHandle: OfxImageMemoryHandle) -> OfxStatus {
 
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
-fn imageMemoryLock(memoryHandle: OfxImageMemoryHandle, returnedPtr: *mut *mut c_void) -> OfxStatus {
+fn imageMemoryLock(
+    memoryHandle: OfxImageMemoryHandle,
+    returnedPtr: *mut *mut c_void,
+) -> OfxStatus {
     panic!("Not implemented!")
 }
 #[allow(non_snake_case)]
@@ -175,10 +182,14 @@ fn imageMemoryUnlock(memoryHandle: OfxImageMemoryHandle) -> OfxStatus {
 #[allow(dead_code)]
 #[repr(C)]
 struct OfxImageEffectSuiteV1 {
-    getPropertySet:
-        fn(imageEffect: OfxImageEffectHandle, propHandle: *mut OfxPropertySetHandle) -> OfxStatus,
-    getParamSet:
-        fn(imageEffect: OfxImageEffectHandle, paramSet: *mut OfxParamSetHandle) -> OfxStatus,
+    getPropertySet: fn(
+        imageEffect: OfxImageEffectHandle,
+        propHandle: *mut OfxPropertySetHandle,
+    ) -> OfxStatus,
+    getParamSet: fn(
+        imageEffect: OfxImageEffectHandle,
+        paramSet: *mut OfxParamSetHandle,
+    ) -> OfxStatus,
     clipDefine: fn(
         imageEffect: OfxImageEffectHandle,
         name: *const char,
@@ -208,8 +219,10 @@ struct OfxImageEffectSuiteV1 {
         memoryHandle: *mut OfxImageMemoryHandle,
     ) -> OfxStatus,
     imageMemoryFree: fn(memoryHandle: OfxImageMemoryHandle) -> OfxStatus,
-    imageMemoryLock:
-        fn(memoryHandle: OfxImageMemoryHandle, returnedPtr: *mut *mut c_void) -> OfxStatus,
+    imageMemoryLock: fn(
+        memoryHandle: OfxImageMemoryHandle,
+        returnedPtr: *mut *mut c_void,
+    ) -> OfxStatus,
     imageMemoryUnlock: fn(memoryHandle: OfxImageMemoryHandle) -> OfxStatus,
 }
 
@@ -623,8 +636,9 @@ fn main() {
             let func: libloading::Symbol<unsafe extern "C" fn() -> i32> =
                 lib.get(b"OfxGetNumberOfPlugins").unwrap();
             count = func();
-            let func2: libloading::Symbol<unsafe extern "C" fn(i32) -> *const OfxPluginRaw> =
-                lib.get(b"OfxGetPlugin").unwrap();
+            let func2: libloading::Symbol<
+                unsafe extern "C" fn(i32) -> *const OfxPluginRaw,
+            > = lib.get(b"OfxGetPlugin").unwrap();
             for i in 0..count {
                 let p = &*func2(i);
                 plugins.push(OfxPlugin {
