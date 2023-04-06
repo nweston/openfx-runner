@@ -1,9 +1,8 @@
+use std::collections::HashMap;
 use std::error::Error;
 use std::ffi::{c_char, c_double, c_int, c_uint, c_void, CStr, CString};
 use std::fs;
 
-struct OfxPropertySet {}
-type OfxPropertySetHandle = *mut OfxPropertySet;
 type OfxImageEffectHandle = *mut c_void;
 type OfxParamSetHandle = *mut c_void;
 type OfxParamHandle = *mut c_void;
@@ -12,6 +11,29 @@ type OfxImageMemoryHandle = *mut c_void;
 type OfxMutexHandle = *mut c_void;
 type OfxMutexConstHandle = *const c_void;
 type OfxStatus = c_int;
+
+#[allow(non_upper_case_globals)]
+#[allow(unused)]
+mod stat {
+    use super::OfxStatus;
+
+    pub const OK: OfxStatus = 0;
+    pub const Failed: OfxStatus = 1;
+    pub const ErrFatal: OfxStatus = 2;
+    pub const ErrUnknown: OfxStatus = 3;
+    pub const ErrMissingHostFeature: OfxStatus = 4;
+    pub const ErrUnsupported: OfxStatus = 5;
+    pub const ErrExists: OfxStatus = 6;
+    pub const ErrFormat: OfxStatus = 7;
+    pub const ErrMemory: OfxStatus = 8;
+    pub const ErrBadHandle: OfxStatus = 9;
+    pub const ErrBadIndex: OfxStatus = 10;
+    pub const ErrValue: OfxStatus = 11;
+    pub const ReplyYes: OfxStatus = 12;
+    pub const ReplyNo: OfxStatus = 13;
+    pub const ReplyDefault: OfxStatus = 14;
+}
+
 type OfxTime = c_double;
 #[allow(dead_code)]
 #[repr(C)]
@@ -258,6 +280,19 @@ const IMAGE_EFFECT_SUITE: OfxImageEffectSuiteV1 = OfxImageEffectSuiteV1 {
 };
 
 // ========= Property Suite =========
+#[derive(Debug)]
+#[allow(dead_code)]
+enum PropertyValue {
+    Pointer(*mut c_void),
+    String(CString),
+    Double(f64),
+    Int(c_int),
+    Unset,
+}
+struct Property(Vec<PropertyValue>);
+struct OfxPropertySet(HashMap<String, Property>);
+type OfxPropertySetHandle = *mut OfxPropertySet;
+
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
 extern "C" fn propSetPointer(
@@ -346,18 +381,73 @@ extern "C" fn propGetPointer(
     index: c_int,
     value: *mut *mut c_void,
 ) -> OfxStatus {
-    panic!("Not implemented!");
+    let key = unsafe { cstr_to_string(property) };
+    let props = unsafe { &*properties };
+    if let Some(values) = props.0.get(&key) {
+        if let Some(v) = values.0.get(index as usize) {
+            match v {
+                PropertyValue::Pointer(p) => unsafe {
+                    *value = *p;
+                    return stat::OK;
+                },
+                PropertyValue::Unset => {
+                    println!("propGetPointer: {} {} not set", key, index);
+                    return stat::ErrUnknown;
+                }
+                _ => {
+                    println!(
+                        "propGetPointer: {} {} unexpected type: {:?}",
+                        key, index, v
+                    );
+                    return stat::ErrUnknown;
+                }
+            }
+        } else {
+            println!("propGetPointer: {} {}: bad index", key, index);
+            return stat::ErrUnknown;
+        }
+    } else {
+        println!("propGetPointer: {} not found", key);
+        return stat::ErrUnknown;
+    }
 }
+
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
 extern "C" fn propGetString(
     properties: OfxPropertySetHandle,
     property: *const c_char,
     index: c_int,
-    value: *mut *mut c_char,
+    value: *mut *const c_char,
 ) -> OfxStatus {
-    panic!("Not implemented!");
+    let key = unsafe { cstr_to_string(property) };
+    let props = unsafe { &*properties };
+    if let Some(values) = props.0.get(&key) {
+        if let Some(v) = values.0.get(index as usize) {
+            match v {
+                PropertyValue::String(s) => unsafe {
+                    *value = s.as_ptr();
+                    return stat::OK;
+                },
+                PropertyValue::Unset => {
+                    println!("propGetString: {} {} not set", key, index);
+                    return stat::ErrUnknown;
+                }
+                _ => {
+                    println!("propGetString: {} {} unexpected type: {:?}", key, index, v);
+                    return stat::ErrUnknown;
+                }
+            }
+        } else {
+            println!("propGetString: {} {}: bad index", key, index);
+            return stat::ErrUnknown;
+        }
+    } else {
+        println!("propGetString: {} not found", key);
+        return stat::ErrUnknown;
+    }
 }
+
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
 extern "C" fn propGetDouble(
@@ -376,8 +466,34 @@ extern "C" fn propGetInt(
     index: c_int,
     value: *mut c_int,
 ) -> OfxStatus {
-    panic!("Not implemented!");
+    let key = unsafe { cstr_to_string(property) };
+    let props = unsafe { &*properties };
+    if let Some(values) = props.0.get(&key) {
+        if let Some(v) = values.0.get(index as usize) {
+            match v {
+                PropertyValue::Int(i) => unsafe {
+                    *value = *i;
+                    return stat::OK;
+                },
+                PropertyValue::Unset => {
+                    println!("propGetInt: {} {} not set", key, index);
+                    return stat::ErrUnknown;
+                }
+                _ => {
+                    println!("propGetInt: {} {} unexpected type: {:?}", key, index, v);
+                    return stat::ErrUnknown;
+                }
+            }
+        } else {
+            println!("propGetInt: {} {}: bad index", key, index);
+            return stat::ErrUnknown;
+        }
+    } else {
+        println!("propGetInt: {} not found", key);
+        return stat::ErrUnknown;
+    }
 }
+
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
 extern "C" fn propGetPointerN(
@@ -394,7 +510,7 @@ extern "C" fn propGetStringN(
     properties: OfxPropertySetHandle,
     property: *const c_char,
     count: c_int,
-    value: *mut *mut c_char,
+    value: *mut *const c_char,
 ) -> OfxStatus {
     panic!("Not implemented!");
 }
@@ -433,7 +549,15 @@ extern "C" fn propGetDimension(
     property: *const c_char,
     count: *mut c_int,
 ) -> OfxStatus {
-    panic!("Not implemented!");
+    let key = unsafe { cstr_to_string(property) };
+    let props = unsafe { &*properties };
+    if let Some(values) = props.0.get(&key) {
+        unsafe { *count = values.0.len() as i32 }
+        return stat::OK;
+    } else {
+        println!("propGetDimension: {} not found", key);
+        return stat::ErrUnknown;
+    }
 }
 
 #[allow(non_snake_case)]
@@ -498,7 +622,7 @@ struct OfxPropertySuiteV1 {
         properties: OfxPropertySetHandle,
         property: *const c_char,
         index: c_int,
-        value: *mut *mut c_char,
+        value: *mut *const c_char,
     ) -> OfxStatus,
     propGetDouble: extern "C" fn(
         properties: OfxPropertySetHandle,
@@ -522,7 +646,7 @@ struct OfxPropertySuiteV1 {
         properties: OfxPropertySetHandle,
         property: *const c_char,
         count: c_int,
-        value: *mut *mut c_char,
+        value: *mut *const c_char,
     ) -> OfxStatus,
     propGetDoubleN: extern "C" fn(
         properties: OfxPropertySetHandle,
@@ -1035,7 +1159,7 @@ extern "C" fn fetch_suite(
 }
 
 fn main() {
-    let mut host_props = OfxPropertySet {};
+    let mut host_props = OfxPropertySet(HashMap::new());
     let host = OfxHost {
         host: &mut host_props,
         fetchSuite: fetch_suite,
