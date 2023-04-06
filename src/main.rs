@@ -6,16 +6,24 @@ struct OfxPropertySet {}
 type OfxPropertySetHandle = *mut OfxPropertySet;
 type OfxImageEffectHandle = *mut c_void;
 type OfxParamSetHandle = *mut c_void;
+type OfxParamHandle = *mut c_void;
 type OfxImageClipHandle = *mut c_void;
 type OfxImageMemoryHandle = *mut c_void;
 type OfxStatus = c_int;
 type OfxTime = c_double;
 #[allow(dead_code)]
+#[repr(C)]
 struct OfxRectD {
     x1: c_double,
     y1: c_double,
     x2: c_double,
     y2: c_double,
+}
+#[allow(dead_code)]
+#[repr(C)]
+struct OfxRangeD {
+    min: c_double,
+    max: c_double,
 }
 
 #[allow(non_snake_case)]
@@ -558,6 +566,237 @@ const PROPERTY_SUITE: OfxPropertySuiteV1 = OfxPropertySuiteV1 {
     propGetDimension,
 };
 
+// ========= Parameter suite =========
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+extern "C" fn paramDefine(
+    paramSet: OfxParamSetHandle,
+    paramType: *const c_char,
+    name: *const c_char,
+    propertySet: *mut OfxPropertySetHandle,
+) -> OfxStatus {
+    panic!("Not implemented!")
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+extern "C" fn paramGetHandle(
+    paramSet: OfxParamSetHandle,
+    name: *const c_char,
+    param: *mut OfxParamHandle,
+    propertySet: *mut OfxPropertySetHandle,
+) -> OfxStatus {
+    panic!("Not implemented!")
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+extern "C" fn paramSetGetPropertySet(
+    paramSet: OfxParamSetHandle,
+    propHandle: *mut OfxPropertySetHandle,
+) -> OfxStatus {
+    panic!("Not implemented!")
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+extern "C" fn paramGetPropertySet(
+    paramHandle: OfxParamHandle,
+    propHandle: *mut OfxPropertySetHandle,
+) -> OfxStatus {
+    panic!("Not implemented!")
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+extern "C" fn paramGetValue(paramHandle: OfxParamHandle) -> OfxStatus {
+    panic!("Not implemented!")
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+extern "C" fn paramGetValueAtTime(
+    paramHandle: OfxParamHandle,
+    time: OfxTime,
+) -> OfxStatus {
+    panic!("Not implemented!")
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+extern "C" fn paramGetDerivative(
+    paramHandle: OfxParamHandle,
+    time: OfxTime,
+) -> OfxStatus {
+    panic!("Not implemented!")
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+extern "C" fn paramGetIntegral(
+    paramHandle: OfxParamHandle,
+    time1: OfxTime,
+    time2: OfxTime,
+) -> OfxStatus {
+    panic!("Not implemented!")
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+extern "C" fn paramSetValue(paramHandle: OfxParamHandle) -> OfxStatus {
+    panic!("Not implemented!")
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+extern "C" fn paramSetValueAtTime(
+    paramHandle: OfxParamHandle,
+    time: OfxTime, // time in frames
+) -> OfxStatus {
+    panic!("Not implemented!")
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+extern "C" fn paramGetNumKeys(
+    paramHandle: OfxParamHandle,
+    numberOfKeys: *mut c_uint,
+) -> OfxStatus {
+    panic!("Not implemented!")
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+extern "C" fn paramGetKeyTime(
+    paramHandle: OfxParamHandle,
+    nthKey: c_uint,
+    time: *mut OfxTime,
+) -> OfxStatus {
+    panic!("Not implemented!")
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+extern "C" fn paramGetKeyIndex(
+    paramHandle: OfxParamHandle,
+    time: OfxTime,
+    direction: c_int,
+    index: *mut c_int,
+) -> OfxStatus {
+    panic!("Not implemented!")
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+extern "C" fn paramDeleteKey(paramHandle: OfxParamHandle, time: OfxTime) -> OfxStatus {
+    panic!("Not implemented!")
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+extern "C" fn paramDeleteAllKeys(paramHandle: OfxParamHandle) -> OfxStatus {
+    panic!("Not implemented!")
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+extern "C" fn paramCopy(
+    paramTo: OfxParamHandle,
+    paramFrom: OfxParamHandle,
+    dstOffset: OfxTime,
+    frameRange: *const OfxRangeD,
+) -> OfxStatus {
+    panic!("Not implemented!")
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+extern "C" fn paramEditBegin(
+    paramSet: OfxParamSetHandle,
+    name: *const c_char,
+) -> OfxStatus {
+    panic!("Not implemented!")
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+extern "C" fn paramEditEnd(paramSet: OfxParamSetHandle) -> OfxStatus {
+    panic!("Not implemented!")
+}
+
+#[allow(non_snake_case)]
+#[allow(dead_code)]
+#[repr(C)]
+struct OfxParameterSuiteV1 {
+    paramDefine: extern "C" fn(
+        paramSet: OfxParamSetHandle,
+        paramType: *const c_char,
+        name: *const c_char,
+        propertySet: *mut OfxPropertySetHandle,
+    ) -> OfxStatus,
+    paramGetHandle: extern "C" fn(
+        paramSet: OfxParamSetHandle,
+        name: *const c_char,
+        param: *mut OfxParamHandle,
+        propertySet: *mut OfxPropertySetHandle,
+    ) -> OfxStatus,
+    paramSetGetPropertySet: extern "C" fn(
+        paramSet: OfxParamSetHandle,
+        propHandle: *mut OfxPropertySetHandle,
+    ) -> OfxStatus,
+    paramGetPropertySet: extern "C" fn(
+        paramHandle: OfxParamHandle,
+        propHandle: *mut OfxPropertySetHandle,
+    ) -> OfxStatus,
+    // XXX: all GetValue functions use varargs to return values
+    paramGetValue: extern "C" fn(paramHandle: OfxParamHandle) -> OfxStatus,
+    paramGetValueAtTime:
+        extern "C" fn(paramHandle: OfxParamHandle, time: OfxTime) -> OfxStatus,
+    paramGetDerivative:
+        extern "C" fn(paramHandle: OfxParamHandle, time: OfxTime) -> OfxStatus,
+    paramGetIntegral: extern "C" fn(
+        paramHandle: OfxParamHandle,
+        time1: OfxTime,
+        time2: OfxTime,
+    ) -> OfxStatus,
+    paramSetValue: extern "C" fn(paramHandle: OfxParamHandle) -> OfxStatus,
+    paramSetValueAtTime: extern "C" fn(
+        paramHandle: OfxParamHandle,
+        time: OfxTime, // time in frames
+    ) -> OfxStatus,
+    paramGetNumKeys: extern "C" fn(
+        paramHandle: OfxParamHandle,
+        numberOfKeys: *mut c_uint,
+    ) -> OfxStatus,
+    paramGetKeyTime: extern "C" fn(
+        paramHandle: OfxParamHandle,
+        nthKey: c_uint,
+        time: *mut OfxTime,
+    ) -> OfxStatus,
+    paramGetKeyIndex: extern "C" fn(
+        paramHandle: OfxParamHandle,
+        time: OfxTime,
+        direction: c_int,
+        index: *mut c_int,
+    ) -> OfxStatus,
+    paramDeleteKey:
+        extern "C" fn(paramHandle: OfxParamHandle, time: OfxTime) -> OfxStatus,
+    paramDeleteAllKeys: extern "C" fn(paramHandle: OfxParamHandle) -> OfxStatus,
+    paramCopy: extern "C" fn(
+        paramTo: OfxParamHandle,
+        paramFrom: OfxParamHandle,
+        dstOffset: OfxTime,
+        frameRange: *const OfxRangeD,
+    ) -> OfxStatus,
+    paramEditBegin:
+        extern "C" fn(paramSet: OfxParamSetHandle, name: *const c_char) -> OfxStatus,
+    paramEditEnd: extern "C" fn(paramSet: OfxParamSetHandle) -> OfxStatus,
+}
+
+const PARAMETER_SUITE: OfxParameterSuiteV1 = OfxParameterSuiteV1 {
+    paramDefine,
+    paramGetHandle,
+    paramSetGetPropertySet,
+    paramGetPropertySet,
+    paramGetValue,
+    paramGetValueAtTime,
+    paramGetDerivative,
+    paramGetIntegral,
+    paramSetValue,
+    paramSetValueAtTime,
+    paramGetNumKeys,
+    paramGetKeyTime,
+    paramGetKeyIndex,
+    paramDeleteKey,
+    paramDeleteAllKeys,
+    paramCopy,
+    paramEditBegin,
+    paramEditEnd,
+};
+
 fn plist_path(bundle_path: &std::path::Path) -> std::path::PathBuf {
     return bundle_path.join("Contents/Info.plist");
 }
@@ -626,6 +865,9 @@ extern "C" fn fetch_suite(
     } else if suite == "OfxPropertySuite" {
         assert!(version == 1);
         &PROPERTY_SUITE as *const _ as *const c_void
+    } else if suite == "OfxParameterSuite" {
+        assert!(version == 1);
+        &PARAMETER_SUITE as *const _ as *const c_void
     } else {
         std::ptr::null()
     }
