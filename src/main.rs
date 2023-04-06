@@ -387,27 +387,27 @@ extern "C" fn propGetPointer(
             match v {
                 PropertyValue::Pointer(p) => unsafe {
                     *value = *p;
-                    return OfxStatus::OK;
+                    OfxStatus::OK
                 },
                 PropertyValue::Unset => {
                     println!("propGetPointer: {} {} not set", key, index);
-                    return OfxStatus::ErrUnknown;
+                    OfxStatus::ErrUnknown
                 }
                 _ => {
                     println!(
                         "propGetPointer: {} {} unexpected type: {:?}",
                         key, index, v
                     );
-                    return OfxStatus::ErrUnknown;
+                    OfxStatus::ErrUnknown
                 }
             }
         } else {
             println!("propGetPointer: {} {}: bad index", key, index);
-            return OfxStatus::ErrUnknown;
+            OfxStatus::ErrUnknown
         }
     } else {
         println!("propGetPointer: {} not found", key);
-        return OfxStatus::ErrUnknown;
+        OfxStatus::ErrUnknown
     }
 }
 
@@ -426,24 +426,24 @@ extern "C" fn propGetString(
             match v {
                 PropertyValue::String(s) => unsafe {
                     *value = s.as_ptr();
-                    return OfxStatus::OK;
+                    OfxStatus::OK
                 },
                 PropertyValue::Unset => {
                     println!("propGetString: {} {} not set", key, index);
-                    return OfxStatus::ErrUnknown;
+                    OfxStatus::ErrUnknown
                 }
                 _ => {
                     println!("propGetString: {} {} unexpected type: {:?}", key, index, v);
-                    return OfxStatus::ErrUnknown;
+                    OfxStatus::ErrUnknown
                 }
             }
         } else {
             println!("propGetString: {} {}: bad index", key, index);
-            return OfxStatus::ErrUnknown;
+            OfxStatus::ErrUnknown
         }
     } else {
         println!("propGetString: {} not found", key);
-        return OfxStatus::ErrUnknown;
+        OfxStatus::ErrUnknown
     }
 }
 
@@ -472,24 +472,24 @@ extern "C" fn propGetInt(
             match v {
                 PropertyValue::Int(i) => unsafe {
                     *value = *i;
-                    return OfxStatus::OK;
+                    OfxStatus::OK
                 },
                 PropertyValue::Unset => {
                     println!("propGetInt: {} {} not set", key, index);
-                    return OfxStatus::ErrUnknown;
+                    OfxStatus::ErrUnknown
                 }
                 _ => {
                     println!("propGetInt: {} {} unexpected type: {:?}", key, index, v);
-                    return OfxStatus::ErrUnknown;
+                    OfxStatus::ErrUnknown
                 }
             }
         } else {
             println!("propGetInt: {} {}: bad index", key, index);
-            return OfxStatus::ErrUnknown;
+            OfxStatus::ErrUnknown
         }
     } else {
         println!("propGetInt: {} not found", key);
-        return OfxStatus::ErrUnknown;
+        OfxStatus::ErrUnknown
     }
 }
 
@@ -552,10 +552,10 @@ extern "C" fn propGetDimension(
     let props = unsafe { &*properties };
     if let Some(values) = props.0.get(&key) {
         unsafe { *count = values.0.len() as i32 }
-        return OfxStatus::OK;
+        OfxStatus::OK
     } else {
         println!("propGetDimension: {} not found", key);
-        return OfxStatus::ErrUnknown;
+        OfxStatus::ErrUnknown
     }
 }
 
@@ -1073,7 +1073,7 @@ const MULTI_THREAD_SUITE: OfxMultiThreadSuiteV1 = OfxMultiThreadSuiteV1 {
 
 // ========= End of suites =========
 fn plist_path(bundle_path: &std::path::Path) -> std::path::PathBuf {
-    return bundle_path.join("Contents/Info.plist");
+    bundle_path.join("Contents/Info.plist")
 }
 
 struct OfxBundle {
@@ -1083,7 +1083,7 @@ struct OfxBundle {
 
 fn make_bundle(path: std::path::PathBuf) -> Result<OfxBundle, Box<dyn Error>> {
     let plist = plist::Value::from_file(plist_path(&path))?;
-    return Ok(OfxBundle { path, plist });
+    Ok(OfxBundle { path, plist })
 }
 
 fn library_path(bundle: &OfxBundle) -> std::path::PathBuf {
@@ -1096,7 +1096,7 @@ fn library_path(bundle: &OfxBundle) -> std::path::PathBuf {
         .as_string()
         .unwrap();
     if cfg!(target_os = "linux") {
-        return bundle.path.join("Contents/Linux-x86-64").join(lib);
+        bundle.path.join("Contents/Linux-x86-64").join(lib)
     } else if cfg!(windows) {
         return bundle.path.join("Contents/Win64").join(lib);
     } else {
@@ -1111,15 +1111,15 @@ fn ofx_bundles() -> Vec<OfxBundle> {
             if path.is_dir() {
                 if let Some(f) = path.file_name() {
                     if f.to_str().map_or(false, |s| s.ends_with(".ofx.bundle")) {
-                        return Some(make_bundle(path).ok()?);
+                        return make_bundle(path).ok();
                     }
                 }
             }
-            return None;
+            None
         });
         return x.collect();
     }
-    return Vec::new();
+    Vec::new()
 }
 
 unsafe fn cstr_to_string(s: *const c_char) -> String {
