@@ -9,6 +9,8 @@ type OfxParamSetHandle = *mut c_void;
 type OfxParamHandle = *mut c_void;
 type OfxImageClipHandle = *mut c_void;
 type OfxImageMemoryHandle = *mut c_void;
+type OfxMutexHandle = *mut c_void;
+type OfxMutexConstHandle = *const c_void;
 type OfxStatus = c_int;
 type OfxTime = c_double;
 #[allow(dead_code)]
@@ -830,6 +832,95 @@ const MEMORY_SUITE: OfxMemorySuiteV1 = OfxMemorySuiteV1 {
     memoryFree,
 };
 
+// ========= Multithread suite =========
+
+type OfxThreadFunctionV1 = extern "C" fn(
+    threadIndex: c_uint,
+    threadMax: c_uint,
+    customArg: *mut c_void,
+) -> OfxStatus;
+
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+extern "C" fn multiThread(
+    func: OfxThreadFunctionV1,
+    nThreads: c_uint,
+    customArg: *mut c_void,
+) -> OfxStatus {
+    panic!("Not implemented!")
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+extern "C" fn multiThreadNumCPUs(nCPUs: *mut c_int) -> OfxStatus {
+    panic!("Not implemented!")
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+extern "C" fn multiThreadIndex(threadIndex: *mut c_int) -> OfxStatus {
+    panic!("Not implemented!")
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+extern "C" fn multiThreadIsSpawnedThread() -> c_int {
+    panic!("Not implemented!")
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+extern "C" fn mutexCreate(mutex: OfxMutexHandle, lockCount: c_int) -> OfxStatus {
+    panic!("Not implemented!")
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+extern "C" fn mutexDestroy(mutex: OfxMutexConstHandle) -> OfxStatus {
+    panic!("Not implemented!")
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+extern "C" fn mutexLock(mutex: OfxMutexConstHandle) -> OfxStatus {
+    panic!("Not implemented!")
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+extern "C" fn mutexUnLock(mutex: OfxMutexConstHandle) -> OfxStatus {
+    panic!("Not implemented!")
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+extern "C" fn mutexTryLock(mutex: OfxMutexConstHandle) -> OfxStatus {
+    panic!("Not implemented!")
+}
+
+#[allow(non_snake_case)]
+#[allow(dead_code)]
+#[repr(C)]
+struct OfxMultiThreadSuiteV1 {
+    multiThread: extern "C" fn(
+        func: OfxThreadFunctionV1,
+        nThreads: c_uint,
+        customArg: *mut c_void,
+    ) -> OfxStatus,
+    multiThreadNumCPUs: extern "C" fn(nCPUs: *mut c_int) -> OfxStatus,
+    multiThreadIndex: extern "C" fn(threadIndex: *mut c_int) -> OfxStatus,
+    multiThreadIsSpawnedThread: extern "C" fn() -> c_int,
+    mutexCreate: extern "C" fn(mutex: OfxMutexHandle, lockCount: c_int) -> OfxStatus,
+    mutexDestroy: extern "C" fn(mutex: OfxMutexConstHandle) -> OfxStatus,
+    mutexLock: extern "C" fn(mutex: OfxMutexConstHandle) -> OfxStatus,
+    mutexUnLock: extern "C" fn(mutex: OfxMutexConstHandle) -> OfxStatus,
+    mutexTryLock: extern "C" fn(mutex: OfxMutexConstHandle) -> OfxStatus,
+}
+
+const MULTI_THREAD_SUITE: OfxMultiThreadSuiteV1 = OfxMultiThreadSuiteV1 {
+    multiThread,
+    multiThreadNumCPUs,
+    multiThreadIndex,
+    multiThreadIsSpawnedThread,
+    mutexCreate,
+    mutexDestroy,
+    mutexLock,
+    mutexUnLock,
+    mutexTryLock,
+};
+
 // ========= End of suites =========
 fn plist_path(bundle_path: &std::path::Path) -> std::path::PathBuf {
     return bundle_path.join("Contents/Info.plist");
@@ -905,6 +996,9 @@ extern "C" fn fetch_suite(
     } else if suite == "OfxMemorySuite" {
         assert!(version == 1);
         &MEMORY_SUITE as *const _ as *const c_void
+    } else if suite == "OfxMultiThreadSuite" {
+        assert!(version == 1);
+        &MULTI_THREAD_SUITE as *const _ as *const c_void
     } else {
         std::ptr::null()
     }
