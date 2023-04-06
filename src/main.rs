@@ -799,6 +799,33 @@ const PARAMETER_SUITE: OfxParameterSuiteV1 = OfxParameterSuiteV1 {
     paramEditEnd,
 };
 
+// ========= MessageSuiteV1 =========
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+extern "C" fn message(
+    handle: *mut c_void,
+    messageType: *const c_char,
+    messageId: *const c_char,
+    format: *const c_char,
+) -> OfxStatus {
+    panic!("Not implemented!")
+}
+
+#[allow(non_snake_case)]
+#[allow(dead_code)]
+#[repr(C)]
+struct OfxMessageSuiteV1 {
+    // XXX: uses varargs
+    message: extern "C" fn(
+        handle: *mut c_void,
+        messageType: *const c_char,
+        messageId: *const c_char,
+        format: *const c_char,
+    ) -> OfxStatus,
+}
+
+const MESSAGE_SUITE: OfxMessageSuiteV1 = OfxMessageSuiteV1 { message };
+
 // ========= Memory suite =========
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
@@ -999,6 +1026,9 @@ extern "C" fn fetch_suite(
     } else if suite == "OfxMultiThreadSuite" {
         assert!(version == 1);
         &MULTI_THREAD_SUITE as *const _ as *const c_void
+    } else if suite == "OfxMessageSuite" {
+        assert!(version == 1);
+        &MESSAGE_SUITE as *const _ as *const c_void
     } else {
         std::ptr::null()
     }
