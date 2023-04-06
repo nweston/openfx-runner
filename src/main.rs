@@ -10,28 +10,27 @@ type OfxImageClipHandle = *mut c_void;
 type OfxImageMemoryHandle = *mut c_void;
 type OfxMutexHandle = *mut c_void;
 type OfxMutexConstHandle = *const c_void;
-type OfxStatus = c_int;
 
-#[allow(non_upper_case_globals)]
-#[allow(unused)]
-mod stat {
-    use super::OfxStatus;
-
-    pub const OK: OfxStatus = 0;
-    pub const Failed: OfxStatus = 1;
-    pub const ErrFatal: OfxStatus = 2;
-    pub const ErrUnknown: OfxStatus = 3;
-    pub const ErrMissingHostFeature: OfxStatus = 4;
-    pub const ErrUnsupported: OfxStatus = 5;
-    pub const ErrExists: OfxStatus = 6;
-    pub const ErrFormat: OfxStatus = 7;
-    pub const ErrMemory: OfxStatus = 8;
-    pub const ErrBadHandle: OfxStatus = 9;
-    pub const ErrBadIndex: OfxStatus = 10;
-    pub const ErrValue: OfxStatus = 11;
-    pub const ReplyYes: OfxStatus = 12;
-    pub const ReplyNo: OfxStatus = 13;
-    pub const ReplyDefault: OfxStatus = 14;
+// TODO: test that i32 and c_int are the same size
+#[repr(i32)]
+#[derive(Debug)]
+#[allow(dead_code)]
+enum OfxStatus {
+    OK = 0,
+    Failed = 1,
+    ErrFatal = 2,
+    ErrUnknown = 3,
+    ErrMissingHostFeature = 4,
+    ErrUnsupported = 5,
+    ErrExists = 6,
+    ErrFormat = 7,
+    ErrMemory = 8,
+    ErrBadHandle = 9,
+    ErrBadIndex = 10,
+    ErrValue = 11,
+    ReplyYes = 12,
+    ReplyNo = 13,
+    ReplyDefault = 14,
 }
 
 type OfxTime = c_double;
@@ -388,27 +387,27 @@ extern "C" fn propGetPointer(
             match v {
                 PropertyValue::Pointer(p) => unsafe {
                     *value = *p;
-                    return stat::OK;
+                    return OfxStatus::OK;
                 },
                 PropertyValue::Unset => {
                     println!("propGetPointer: {} {} not set", key, index);
-                    return stat::ErrUnknown;
+                    return OfxStatus::ErrUnknown;
                 }
                 _ => {
                     println!(
                         "propGetPointer: {} {} unexpected type: {:?}",
                         key, index, v
                     );
-                    return stat::ErrUnknown;
+                    return OfxStatus::ErrUnknown;
                 }
             }
         } else {
             println!("propGetPointer: {} {}: bad index", key, index);
-            return stat::ErrUnknown;
+            return OfxStatus::ErrUnknown;
         }
     } else {
         println!("propGetPointer: {} not found", key);
-        return stat::ErrUnknown;
+        return OfxStatus::ErrUnknown;
     }
 }
 
@@ -427,24 +426,24 @@ extern "C" fn propGetString(
             match v {
                 PropertyValue::String(s) => unsafe {
                     *value = s.as_ptr();
-                    return stat::OK;
+                    return OfxStatus::OK;
                 },
                 PropertyValue::Unset => {
                     println!("propGetString: {} {} not set", key, index);
-                    return stat::ErrUnknown;
+                    return OfxStatus::ErrUnknown;
                 }
                 _ => {
                     println!("propGetString: {} {} unexpected type: {:?}", key, index, v);
-                    return stat::ErrUnknown;
+                    return OfxStatus::ErrUnknown;
                 }
             }
         } else {
             println!("propGetString: {} {}: bad index", key, index);
-            return stat::ErrUnknown;
+            return OfxStatus::ErrUnknown;
         }
     } else {
         println!("propGetString: {} not found", key);
-        return stat::ErrUnknown;
+        return OfxStatus::ErrUnknown;
     }
 }
 
@@ -473,24 +472,24 @@ extern "C" fn propGetInt(
             match v {
                 PropertyValue::Int(i) => unsafe {
                     *value = *i;
-                    return stat::OK;
+                    return OfxStatus::OK;
                 },
                 PropertyValue::Unset => {
                     println!("propGetInt: {} {} not set", key, index);
-                    return stat::ErrUnknown;
+                    return OfxStatus::ErrUnknown;
                 }
                 _ => {
                     println!("propGetInt: {} {} unexpected type: {:?}", key, index, v);
-                    return stat::ErrUnknown;
+                    return OfxStatus::ErrUnknown;
                 }
             }
         } else {
             println!("propGetInt: {} {}: bad index", key, index);
-            return stat::ErrUnknown;
+            return OfxStatus::ErrUnknown;
         }
     } else {
         println!("propGetInt: {} not found", key);
-        return stat::ErrUnknown;
+        return OfxStatus::ErrUnknown;
     }
 }
 
@@ -553,10 +552,10 @@ extern "C" fn propGetDimension(
     let props = unsafe { &*properties };
     if let Some(values) = props.0.get(&key) {
         unsafe { *count = values.0.len() as i32 }
-        return stat::OK;
+        return OfxStatus::OK;
     } else {
         println!("propGetDimension: {} not found", key);
-        return stat::ErrUnknown;
+        return OfxStatus::ErrUnknown;
     }
 }
 
@@ -1211,7 +1210,7 @@ fn main() {
                 std::ptr::null_mut(),
             );
             println!(
-                "  {:?}, Load returned {}, Unload returned {}",
+                "  {:?}, Load returned {:?}, Unload returned {:?}",
                 p, stat, stat2
             );
         }
