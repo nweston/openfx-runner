@@ -76,7 +76,7 @@ impl OfxPlugin {
 // ========= ImageEffectSuite =========
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
-fn getPropertySet(
+extern "C" fn getPropertySet(
     imageEffect: OfxImageEffectHandle,
     propHandle: *mut OfxPropertySetHandle,
 ) -> OfxStatus {
@@ -85,7 +85,7 @@ fn getPropertySet(
 
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
-fn getParamSet(
+extern "C" fn getParamSet(
     imageEffect: OfxImageEffectHandle,
     paramSet: *mut OfxParamSetHandle,
 ) -> OfxStatus {
@@ -93,7 +93,7 @@ fn getParamSet(
 }
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
-fn clipDefine(
+extern "C" fn clipDefine(
     imageEffect: OfxImageEffectHandle,
     name: *const char,
     propertySet: *mut OfxPropertySetHandle,
@@ -102,7 +102,7 @@ fn clipDefine(
 }
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
-fn clipGetHandle(
+extern "C" fn clipGetHandle(
     imageEffect: OfxImageEffectHandle,
     name: *const char,
     clip: *mut OfxImageClipHandle,
@@ -113,7 +113,7 @@ fn clipGetHandle(
 
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
-fn clipGetPropertySet(
+extern "C" fn clipGetPropertySet(
     clip: OfxImageClipHandle,
     propHandle: *mut OfxPropertySetHandle,
 ) -> OfxStatus {
@@ -121,7 +121,7 @@ fn clipGetPropertySet(
 }
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
-fn clipGetImage(
+extern "C" fn clipGetImage(
     clip: OfxImageClipHandle,
     time: OfxTime,
     region: *const OfxRectD,
@@ -131,13 +131,13 @@ fn clipGetImage(
 }
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
-fn clipReleaseImage(imageHandle: OfxPropertySetHandle) -> OfxStatus {
+extern "C" fn clipReleaseImage(imageHandle: OfxPropertySetHandle) -> OfxStatus {
     panic!("Not implemented!")
 }
 
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
-fn clipGetRegionOfDefinition(
+extern "C" fn clipGetRegionOfDefinition(
     clip: OfxImageClipHandle,
     time: OfxTime,
     bounds: *const OfxRectD,
@@ -146,12 +146,12 @@ fn clipGetRegionOfDefinition(
 }
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
-fn abort(imageEffect: OfxImageEffectHandle) -> c_int {
+extern "C" fn abort(imageEffect: OfxImageEffectHandle) -> c_int {
     panic!("Not implemented!")
 }
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
-fn imageMemoryAlloc(
+extern "C" fn imageMemoryAlloc(
     instanceHandle: OfxImageEffectHandle,
     nBytes: usize,
     memoryHandle: *mut OfxImageMemoryHandle,
@@ -160,13 +160,13 @@ fn imageMemoryAlloc(
 }
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
-fn imageMemoryFree(memoryHandle: OfxImageMemoryHandle) -> OfxStatus {
+extern "C" fn imageMemoryFree(memoryHandle: OfxImageMemoryHandle) -> OfxStatus {
     panic!("Not implemented!")
 }
 
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
-fn imageMemoryLock(
+extern "C" fn imageMemoryLock(
     memoryHandle: OfxImageMemoryHandle,
     returnedPtr: *mut *mut c_void,
 ) -> OfxStatus {
@@ -174,7 +174,7 @@ fn imageMemoryLock(
 }
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
-fn imageMemoryUnlock(memoryHandle: OfxImageMemoryHandle) -> OfxStatus {
+extern "C" fn imageMemoryUnlock(memoryHandle: OfxImageMemoryHandle) -> OfxStatus {
     panic!("Not implemented!")
 }
 
@@ -182,48 +182,53 @@ fn imageMemoryUnlock(memoryHandle: OfxImageMemoryHandle) -> OfxStatus {
 #[allow(dead_code)]
 #[repr(C)]
 struct OfxImageEffectSuiteV1 {
-    getPropertySet: fn(
+    getPropertySet: extern "C" fn(
         imageEffect: OfxImageEffectHandle,
         propHandle: *mut OfxPropertySetHandle,
     ) -> OfxStatus,
-    getParamSet: fn(
+    getParamSet: extern "C" fn(
         imageEffect: OfxImageEffectHandle,
         paramSet: *mut OfxParamSetHandle,
     ) -> OfxStatus,
-    clipDefine: fn(
+    clipDefine: extern "C" fn(
         imageEffect: OfxImageEffectHandle,
         name: *const char,
         propertySet: *mut OfxPropertySetHandle,
     ) -> OfxStatus,
-    clipGetHandle: fn(
+    clipGetHandle: extern "C" fn(
         imageEffect: OfxImageEffectHandle,
         name: *const char,
         clip: *mut OfxImageClipHandle,
         propertySet: *mut OfxPropertySetHandle,
     ) -> OfxStatus,
-    clipGetPropertySet:
-        fn(clip: OfxImageClipHandle, propHandle: *mut OfxPropertySetHandle) -> OfxStatus,
-    clipGetImage: fn(
+    clipGetPropertySet: extern "C" fn(
+        clip: OfxImageClipHandle,
+        propHandle: *mut OfxPropertySetHandle,
+    ) -> OfxStatus,
+    clipGetImage: extern "C" fn(
         clip: OfxImageClipHandle,
         time: OfxTime,
         region: *const OfxRectD,
         imageHandle: *mut OfxPropertySetHandle,
     ) -> OfxStatus,
-    clipReleaseImage: fn(imageHandle: OfxPropertySetHandle) -> OfxStatus,
-    clipGetRegionOfDefinition:
-        fn(clip: OfxImageClipHandle, time: OfxTime, bounds: *const OfxRectD) -> OfxStatus,
-    abort: fn(imageEffect: OfxImageEffectHandle) -> c_int,
-    imageMemoryAlloc: fn(
+    clipReleaseImage: extern "C" fn(imageHandle: OfxPropertySetHandle) -> OfxStatus,
+    clipGetRegionOfDefinition: extern "C" fn(
+        clip: OfxImageClipHandle,
+        time: OfxTime,
+        bounds: *const OfxRectD,
+    ) -> OfxStatus,
+    abort: extern "C" fn(imageEffect: OfxImageEffectHandle) -> c_int,
+    imageMemoryAlloc: extern "C" fn(
         instanceHandle: OfxImageEffectHandle,
         nBytes: usize,
         memoryHandle: *mut OfxImageMemoryHandle,
     ) -> OfxStatus,
-    imageMemoryFree: fn(memoryHandle: OfxImageMemoryHandle) -> OfxStatus,
-    imageMemoryLock: fn(
+    imageMemoryFree: extern "C" fn(memoryHandle: OfxImageMemoryHandle) -> OfxStatus,
+    imageMemoryLock: extern "C" fn(
         memoryHandle: OfxImageMemoryHandle,
         returnedPtr: *mut *mut c_void,
     ) -> OfxStatus,
-    imageMemoryUnlock: fn(memoryHandle: OfxImageMemoryHandle) -> OfxStatus,
+    imageMemoryUnlock: extern "C" fn(memoryHandle: OfxImageMemoryHandle) -> OfxStatus,
 }
 
 const IMAGE_EFFECT_SUITE: OfxImageEffectSuiteV1 = OfxImageEffectSuiteV1 {
@@ -245,7 +250,7 @@ const IMAGE_EFFECT_SUITE: OfxImageEffectSuiteV1 = OfxImageEffectSuiteV1 {
 // ========= Property Suite =========
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
-fn propSetPointer(
+extern "C" fn propSetPointer(
     properties: OfxPropertySetHandle,
     property: *const c_char,
     index: c_int,
@@ -255,7 +260,7 @@ fn propSetPointer(
 }
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
-fn propSetString(
+extern "C" fn propSetString(
     properties: OfxPropertySetHandle,
     property: *const c_char,
     index: c_int,
@@ -265,7 +270,7 @@ fn propSetString(
 }
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
-fn propSetDouble(
+extern "C" fn propSetDouble(
     properties: OfxPropertySetHandle,
     property: *const c_char,
     index: c_int,
@@ -275,7 +280,7 @@ fn propSetDouble(
 }
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
-fn propSetInt(
+extern "C" fn propSetInt(
     properties: OfxPropertySetHandle,
     property: *const c_char,
     index: c_int,
@@ -285,7 +290,7 @@ fn propSetInt(
 }
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
-fn propSetPointerN(
+extern "C" fn propSetPointerN(
     properties: OfxPropertySetHandle,
     property: *const c_char,
     count: c_int,
@@ -295,7 +300,7 @@ fn propSetPointerN(
 }
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
-fn propSetStringN(
+extern "C" fn propSetStringN(
     properties: OfxPropertySetHandle,
     property: *const c_char,
     count: c_int,
@@ -305,7 +310,7 @@ fn propSetStringN(
 }
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
-fn propSetDoubleN(
+extern "C" fn propSetDoubleN(
     properties: OfxPropertySetHandle,
     property: *const c_char,
     count: c_int,
@@ -315,7 +320,7 @@ fn propSetDoubleN(
 }
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
-fn propSetIntN(
+extern "C" fn propSetIntN(
     properties: OfxPropertySetHandle,
     property: *const c_char,
     count: c_int,
@@ -325,7 +330,7 @@ fn propSetIntN(
 }
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
-fn propGetPointer(
+extern "C" fn propGetPointer(
     properties: OfxPropertySetHandle,
     property: *const c_char,
     index: c_int,
@@ -335,7 +340,7 @@ fn propGetPointer(
 }
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
-fn propGetString(
+extern "C" fn propGetString(
     properties: OfxPropertySetHandle,
     property: *const c_char,
     index: c_int,
@@ -345,7 +350,7 @@ fn propGetString(
 }
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
-fn propGetDouble(
+extern "C" fn propGetDouble(
     properties: OfxPropertySetHandle,
     property: *const c_char,
     index: c_int,
@@ -355,7 +360,7 @@ fn propGetDouble(
 }
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
-fn propGetInt(
+extern "C" fn propGetInt(
     properties: OfxPropertySetHandle,
     property: *const c_char,
     index: c_int,
@@ -365,7 +370,7 @@ fn propGetInt(
 }
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
-fn propGetPointerN(
+extern "C" fn propGetPointerN(
     properties: OfxPropertySetHandle,
     property: *const c_char,
     count: c_int,
@@ -375,7 +380,7 @@ fn propGetPointerN(
 }
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
-fn propGetStringN(
+extern "C" fn propGetStringN(
     properties: OfxPropertySetHandle,
     property: *const c_char,
     count: c_int,
@@ -385,7 +390,7 @@ fn propGetStringN(
 }
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
-fn propGetDoubleN(
+extern "C" fn propGetDoubleN(
     properties: OfxPropertySetHandle,
     property: *const c_char,
     count: c_int,
@@ -395,7 +400,7 @@ fn propGetDoubleN(
 }
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
-fn propGetIntN(
+extern "C" fn propGetIntN(
     properties: OfxPropertySetHandle,
     property: *const c_char,
     count: c_int,
@@ -405,12 +410,15 @@ fn propGetIntN(
 }
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
-fn propReset(properties: OfxPropertySetHandle, property: *const c_char) -> OfxStatus {
+extern "C" fn propReset(
+    properties: OfxPropertySetHandle,
+    property: *const c_char,
+) -> OfxStatus {
     panic!("Not implemented!");
 }
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
-fn propGetDimension(
+extern "C" fn propGetDimension(
     properties: OfxPropertySetHandle,
     property: *const c_char,
     count: *mut c_int,
@@ -422,104 +430,107 @@ fn propGetDimension(
 #[allow(dead_code)]
 #[repr(C)]
 struct OfxPropertySuiteV1 {
-    propSetPointer: fn(
+    propSetPointer: extern "C" fn(
         properties: OfxPropertySetHandle,
         property: *const c_char,
         index: c_int,
         value: *mut c_void,
     ) -> OfxStatus,
-    propSetString: fn(
+    propSetString: extern "C" fn(
         properties: OfxPropertySetHandle,
         property: *const c_char,
         index: c_int,
         value: *const c_char,
     ) -> OfxStatus,
-    propSetDouble: fn(
+    propSetDouble: extern "C" fn(
         properties: OfxPropertySetHandle,
         property: *const c_char,
         index: c_int,
         value: c_double,
     ) -> OfxStatus,
-    propSetInt: fn(
+    propSetInt: extern "C" fn(
         properties: OfxPropertySetHandle,
         property: *const c_char,
         index: c_int,
         value: c_int,
     ) -> OfxStatus,
-    propSetPointerN: fn(
+    propSetPointerN: extern "C" fn(
         properties: OfxPropertySetHandle,
         property: *const c_char,
         count: c_int,
         value: *const *mut c_void,
     ) -> OfxStatus,
-    propSetStringN: fn(
+    propSetStringN: extern "C" fn(
         properties: OfxPropertySetHandle,
         property: *const c_char,
         count: c_int,
         value: *const *const c_char,
     ) -> OfxStatus,
-    propSetDoubleN: fn(
+    propSetDoubleN: extern "C" fn(
         properties: OfxPropertySetHandle,
         property: *const c_char,
         count: c_int,
         value: *const c_double,
     ) -> OfxStatus,
-    propSetIntN: fn(
+    propSetIntN: extern "C" fn(
         properties: OfxPropertySetHandle,
         property: *const c_char,
         count: c_int,
         value: *const c_int,
     ) -> OfxStatus,
-    propGetPointer: fn(
+    propGetPointer: extern "C" fn(
         properties: OfxPropertySetHandle,
         property: *const c_char,
         index: c_int,
         value: *mut *mut c_void,
     ) -> OfxStatus,
-    propGetString: fn(
+    propGetString: extern "C" fn(
         properties: OfxPropertySetHandle,
         property: *const c_char,
         index: c_int,
         value: *mut *mut c_char,
     ) -> OfxStatus,
-    propGetDouble: fn(
+    propGetDouble: extern "C" fn(
         properties: OfxPropertySetHandle,
         property: *const c_char,
         index: c_int,
         value: *mut c_double,
     ) -> OfxStatus,
-    propGetInt: fn(
+    propGetInt: extern "C" fn(
         properties: OfxPropertySetHandle,
         property: *const c_char,
         index: c_int,
         value: *mut c_int,
     ) -> OfxStatus,
-    propGetPointerN: fn(
+    propGetPointerN: extern "C" fn(
         properties: OfxPropertySetHandle,
         property: *const c_char,
         count: c_int,
         value: *mut *mut c_void,
     ) -> OfxStatus,
-    propGetStringN: fn(
+    propGetStringN: extern "C" fn(
         properties: OfxPropertySetHandle,
         property: *const c_char,
         count: c_int,
         value: *mut *mut c_char,
     ) -> OfxStatus,
-    propGetDoubleN: fn(
+    propGetDoubleN: extern "C" fn(
         properties: OfxPropertySetHandle,
         property: *const c_char,
         count: c_int,
         value: *mut c_double,
     ) -> OfxStatus,
-    propGetIntN: fn(
+    propGetIntN: extern "C" fn(
         properties: OfxPropertySetHandle,
         property: *const c_char,
         count: c_int,
         value: *mut c_int,
     ) -> OfxStatus,
-    propReset: fn(properties: OfxPropertySetHandle, property: *const c_char) -> OfxStatus,
-    propGetDimension: fn(
+    propReset: extern "C" fn(
+        properties: OfxPropertySetHandle,
+        property: *const c_char,
+    ) -> OfxStatus,
+    propGetDimension: extern "C" fn(
         properties: OfxPropertySetHandle,
         property: *const c_char,
         count: *mut c_int,
