@@ -797,6 +797,40 @@ const PARAMETER_SUITE: OfxParameterSuiteV1 = OfxParameterSuiteV1 {
     paramEditEnd,
 };
 
+// ========= Memory suite =========
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+extern "C" fn memoryAlloc(
+    handle: *mut c_void,
+    nBytes: usize,
+    allocatedData: *mut *mut c_void,
+) -> OfxStatus {
+    panic!("Not implemented!")
+}
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+extern "C" fn memoryFree(allocatedData: *mut c_void) -> OfxStatus {
+    panic!("Not implemented!")
+}
+
+#[allow(non_snake_case)]
+#[allow(dead_code)]
+#[repr(C)]
+struct OfxMemorySuiteV1 {
+    memoryAlloc: extern "C" fn(
+        handle: *mut c_void,
+        nBytes: usize,
+        allocatedData: *mut *mut c_void,
+    ) -> OfxStatus,
+    memoryFree: extern "C" fn(allocatedData: *mut c_void) -> OfxStatus,
+}
+
+const MEMORY_SUITE: OfxMemorySuiteV1 = OfxMemorySuiteV1 {
+    memoryAlloc,
+    memoryFree,
+};
+
+// ========= End of suites =========
 fn plist_path(bundle_path: &std::path::Path) -> std::path::PathBuf {
     return bundle_path.join("Contents/Info.plist");
 }
@@ -868,6 +902,9 @@ extern "C" fn fetch_suite(
     } else if suite == "OfxParameterSuite" {
         assert!(version == 1);
         &PARAMETER_SUITE as *const _ as *const c_void
+    } else if suite == "OfxMemorySuite" {
+        assert!(version == 1);
+        &MEMORY_SUITE as *const _ as *const c_void
     } else {
         std::ptr::null()
     }
