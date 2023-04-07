@@ -3,8 +3,19 @@ use std::error::Error;
 use std::ffi::{c_char, c_double, c_int, c_uint, c_void, CStr, CString};
 use std::fs;
 
-type OfxImageEffectHandle = *mut c_void;
-type OfxParamSetHandle = *mut c_void;
+#[derive(Default, Debug)]
+struct OfxParamSet {
+    properties: OfxPropertySet,
+}
+
+#[derive(Default, Debug)]
+struct OfxImageEffect {
+    properties: OfxPropertySet,
+    params: OfxParamSet,
+}
+
+type OfxImageEffectHandle = *mut OfxImageEffect;
+type OfxParamSetHandle = *mut OfxParamSet;
 type OfxParamHandle = *mut c_void;
 type OfxImageClipHandle = *mut c_void;
 type OfxImageMemoryHandle = *mut c_void;
@@ -13,7 +24,7 @@ type OfxMutexConstHandle = *const c_void;
 
 // TODO: test that i32 and c_int are the same size
 #[repr(i32)]
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 #[allow(dead_code)]
 enum OfxStatus {
     OK = 0,
@@ -111,7 +122,11 @@ extern "C" fn getPropertySet(
     imageEffect: OfxImageEffectHandle,
     propHandle: *mut OfxPropertySetHandle,
 ) -> OfxStatus {
-    panic!("Not implemented!")
+    unsafe {
+        let handle = std::ptr::addr_of_mut!((&mut *imageEffect).properties);
+        *propHandle = handle;
+    };
+    OfxStatus::OK
 }
 
 #[allow(non_snake_case)]
@@ -120,7 +135,11 @@ extern "C" fn getParamSet(
     imageEffect: OfxImageEffectHandle,
     paramSet: *mut OfxParamSetHandle,
 ) -> OfxStatus {
-    panic!("Not implemented!")
+    unsafe {
+        let handle = std::ptr::addr_of_mut!((&mut *imageEffect).params);
+        *paramSet = handle;
+    };
+    OfxStatus::OK
 }
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
@@ -290,6 +309,12 @@ enum PropertyValue {
 }
 
 // Basic conversions
+impl From<CString> for PropertyValue {
+    fn from(s: CString) -> Self {
+        PropertyValue::String(s)
+    }
+}
+
 impl From<&str> for PropertyValue {
     fn from(s: &str) -> Self {
         PropertyValue::String(CString::new(s).unwrap())
@@ -321,6 +346,7 @@ impl From<*mut c_void> for PropertyValue {
     }
 }
 
+#[derive(Default, Debug)]
 struct Property(Vec<PropertyValue>);
 
 // Make a PropertyValue from a single value
@@ -349,6 +375,7 @@ where
     }
 }
 
+#[derive(Default, Debug)]
 struct OfxPropertySet(HashMap<String, Property>);
 
 impl<const S: usize> From<[(&str, Property); S]> for OfxPropertySet {
@@ -363,6 +390,28 @@ impl<const S: usize> From<[(&str, Property); S]> for OfxPropertySet {
 
 type OfxPropertySetHandle = *mut OfxPropertySet;
 
+fn set_property(
+    properties: OfxPropertySetHandle,
+    name: *const c_char,
+    index: c_int,
+    value: PropertyValue,
+) -> OfxStatus {
+    if let Ok(name_str) = unsafe { CStr::from_ptr(name).to_str() } {
+        let prop = unsafe { &mut *properties }
+            .0
+            .entry(name_str.to_string())
+            .or_insert(Default::default());
+        let uindex = index as usize;
+        if uindex >= prop.0.len() {
+            prop.0.resize_with(uindex + 1, || PropertyValue::Unset)
+        }
+        prop.0[uindex] = value;
+        OfxStatus::OK
+    } else {
+        OfxStatus::ErrUnknown
+    }
+}
+
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
 extern "C" fn propSetPointer(
@@ -371,7 +420,7 @@ extern "C" fn propSetPointer(
     index: c_int,
     value: *mut c_void,
 ) -> OfxStatus {
-    panic!("Not implemented!");
+    set_property(properties, property, index, value.into())
 }
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
@@ -381,7 +430,11 @@ extern "C" fn propSetString(
     index: c_int,
     value: *const c_char,
 ) -> OfxStatus {
-    panic!("Not implemented!");
+    if let Ok(value_str) = unsafe { CStr::from_ptr(value).to_str() } {
+        set_property(properties, property, index, value_str.into())
+    } else {
+        OfxStatus::ErrUnknown
+    }
 }
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
@@ -391,7 +444,7 @@ extern "C" fn propSetDouble(
     index: c_int,
     value: c_double,
 ) -> OfxStatus {
-    panic!("Not implemented!");
+    set_property(properties, property, index, value.into())
 }
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
@@ -401,7 +454,7 @@ extern "C" fn propSetInt(
     index: c_int,
     value: c_int,
 ) -> OfxStatus {
-    panic!("Not implemented!");
+    set_property(properties, property, index, value.into())
 }
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
@@ -789,7 +842,11 @@ extern "C" fn paramSetGetPropertySet(
     paramSet: OfxParamSetHandle,
     propHandle: *mut OfxPropertySetHandle,
 ) -> OfxStatus {
-    panic!("Not implemented!")
+    unsafe {
+        let handle = std::ptr::addr_of_mut!((&mut *paramSet).properties);
+        *propHandle = handle;
+    };
+    OfxStatus::OK
 }
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
@@ -1323,16 +1380,26 @@ fn main() {
                 std::ptr::null_mut(),
                 std::ptr::null_mut(),
             );
+            let effect: OfxImageEffect = Default::default();
             let stat2 = p.call_action(
+                "OfxActionDescribe",
+                std::ptr::addr_of!(effect) as *const c_void,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            );
+            let stat3 = p.call_action(
                 "OfxActionUnload",
                 std::ptr::null(),
                 std::ptr::null_mut(),
                 std::ptr::null_mut(),
             );
             println!(
-                "  {:?}, Load returned {:?}, Unload returned {:?}",
-                p, stat, stat2
+                "  {:?}, Load returned {:?}, Describe returned {:?}, Unload returned {:?}",
+                p, stat, stat2, stat3
             );
+            if stat2 == OfxStatus::OK {
+                println!("{:?}", effect)
+            }
         }
         println!()
     }
