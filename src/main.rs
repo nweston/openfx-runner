@@ -288,8 +288,79 @@ enum PropertyValue {
     Int(c_int),
     Unset,
 }
+
+// Basic conversions
+impl From<&str> for PropertyValue {
+    fn from(s: &str) -> Self {
+        PropertyValue::String(CString::new(s).unwrap())
+    }
+}
+
+impl From<c_int> for PropertyValue {
+    fn from(i: c_int) -> Self {
+        PropertyValue::Int(i)
+    }
+}
+
+// OFX uses integers with 0/1 value for boolean properties
+impl From<bool> for PropertyValue {
+    fn from(b: bool) -> Self {
+        PropertyValue::Int(if b { 1 } else { 0 })
+    }
+}
+
+impl From<f64> for PropertyValue {
+    fn from(i: f64) -> Self {
+        PropertyValue::Double(i)
+    }
+}
+
+impl From<*mut c_void> for PropertyValue {
+    fn from(i: *mut c_void) -> Self {
+        PropertyValue::Pointer(i)
+    }
+}
+
 struct Property(Vec<PropertyValue>);
+
+// Make a PropertyValue from a single value
+impl<A: Into<PropertyValue>> From<A> for Property {
+    fn from(a: A) -> Self {
+        Property([a.into()].into())
+    }
+}
+
+// Make a PropertyValue from an array of values
+impl<T: Copy, const S: usize> From<[T; S]> for Property
+where
+    PropertyValue: From<T>,
+{
+    fn from(a: [T; S]) -> Self {
+        Property(a.into_iter().map(PropertyValue::from).collect())
+    }
+}
+
+impl<T: Copy> From<Vec<T>> for Property
+where
+    PropertyValue: From<T>,
+{
+    fn from(vec: Vec<T>) -> Self {
+        Property(vec.into_iter().map(PropertyValue::from).collect())
+    }
+}
+
 struct OfxPropertySet(HashMap<String, Property>);
+
+impl<const S: usize> From<[(&str, Property); S]> for OfxPropertySet {
+    fn from(slice: [(&str, Property); S]) -> Self {
+        let mut map = HashMap::new();
+        for (name, value) in slice {
+            map.insert(name.into(), value);
+        }
+        Self(map)
+    }
+}
+
 type OfxPropertySetHandle = *mut OfxPropertySet;
 
 #[allow(non_snake_case)]
@@ -1158,7 +1229,10 @@ extern "C" fn fetch_suite(
 }
 
 fn main() {
-    let mut host_props = OfxPropertySet(HashMap::new());
+    let mut host_props = OfxPropertySet::from([
+        ("OfxPropName", "openfx-driver".into()),
+        ("OfxPropAPIVersion", [1, 4].into()),
+    ]);
     let host = OfxHost {
         host: &mut host_props,
         fetchSuite: fetch_suite,
