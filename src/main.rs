@@ -1229,9 +1229,55 @@ extern "C" fn fetch_suite(
 }
 
 fn main() {
+    const VERSION_NAME: &str = env!("CARGO_PKG_VERSION");
+    let version: Vec<_> = VERSION_NAME
+        .split('.')
+        .map(|s| s.parse::<c_int>().unwrap())
+        .collect();
     let mut host_props = OfxPropertySet::from([
         ("OfxPropName", "openfx-driver".into()),
+        ("OfxPropLabel", "OpenFX Driver".into()),
+        ("OfxPropVersion", version.into()),
+        ("OfxPropVersionLabel", VERSION_NAME.into()),
         ("OfxPropAPIVersion", [1, 4].into()),
+        ("OfxImageEffectHostPropIsBackground", false.into()),
+        ("OfxImageEffectPropSupportsOverlays", false.into()),
+        ("OfxImageEffectPropSupportsMultiResolution", false.into()),
+        ("OfxImageEffectPropSupportsTiles", false.into()),
+        ("OfxImageEffectPropTemporalClipAccess", false.into()),
+        ("OfxImageEffectPropMultipleClipDepths", false.into()),
+        ("OfxImageEffectPropSupportsMultipleClipPARs", false.into()),
+        ("OfxImageEffectPropSetableFrameRate", false.into()),
+        ("OfxImageEffectPropSetableFielding", false.into()),
+        ("OfxImageEffectInstancePropSequentialRender", false.into()),
+        ("OfxParamHostPropSupportsStringAnimation", false.into()),
+        ("OfxParamHostPropSupportsCustomInteract", false.into()),
+        ("OfxParamHostPropSupportsChoiceAnimation", false.into()),
+        ("OfxParamHostPropSupportsStrChoiceAnimation", false.into()),
+        ("OfxParamHostPropSupportsBooleanAnimation", false.into()),
+        ("OfxParamHostPropSupportsCustomAnimation", false.into()),
+        ("OfxParamHostPropSupportsParametricAnimation", false.into()),
+        // Resolve GPU extensions weirdly use "false"/"true" strings
+        ("OfxImageEffectPropOpenCLRenderSupported", "false".into()),
+        ("OfxImageEffectPropCudaRenderSupported", "false".into()),
+        ("OfxImageEffectPropCudaStreamSupported", "false".into()),
+        ("OfxImageEffectPropMetalRenderSupported", "false".into()),
+        ("OfxImageEffectPropRenderQualityDraft", false.into()),
+        ("OfxParamHostPropMaxParameters", (-1).into()),
+        ("OfxParamHostPropMaxPages", 0.into()),
+        ("OfxParamHostPropPageRowColumnCount", [0, 0].into()),
+        (
+            "OfxImageEffectPropSupportedComponents",
+            "OfxImageComponentRGBA".into(),
+        ),
+        (
+            "OfxImageEffectPropSupportedContexts",
+            "OfxImageEffectContextFilter".into(),
+        ),
+        (
+            "OfxImageEffectPropSupportedPixelDepths",
+            "OfxBitDepthFloat".into(),
+        ),
     ]);
     let host = OfxHost {
         host: &mut host_props,
