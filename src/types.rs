@@ -1,16 +1,32 @@
 // Types defined by the OFX API
 
-use crate::{OfxImageEffect, OfxParamSet, OfxPropertySet};
 use std::ffi::{c_char, c_double, c_int, c_uint, c_void};
 
-pub type OfxImageClipHandle = *mut c_void;
-pub type OfxImageEffectHandle = *mut OfxImageEffect;
-pub type OfxImageMemoryHandle = *mut c_void;
-pub type OfxMutexConstHandle = *const c_void;
-pub type OfxMutexHandle = *mut c_void;
-pub type OfxParamHandle = *mut c_void;
-pub type OfxParamSetHandle = *mut OfxParamSet;
-pub type OfxPropertySetHandle = *mut OfxPropertySet;
+macro_rules! handle {
+    ($name: ident) => {
+        #[repr(C)]
+        pub struct $name(*mut c_void);
+        impl From<$name> for *mut c_void {
+            fn from(handle: $name) -> Self {
+                handle.0
+            }
+        }
+        impl From<*mut c_void> for $name {
+            fn from(ptr: *mut c_void) -> Self {
+                Self(ptr)
+            }
+        }
+    };
+}
+
+handle!(OfxImageClipHandle);
+handle!(OfxImageEffectHandle);
+handle!(OfxImageMemoryHandle);
+handle!(OfxMutexConstHandle);
+handle!(OfxMutexHandle);
+handle!(OfxParamHandle);
+handle!(OfxParamSetHandle);
+handle!(OfxPropertySetHandle);
 
 // TODO: test that i32 and c_int are the same size
 #[repr(i32)]

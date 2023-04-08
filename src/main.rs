@@ -6,6 +6,35 @@ use std::fs;
 mod types;
 use types::*;
 
+trait Handle {
+    type Object;
+
+    fn as_ref(self) -> &'static mut Self::Object
+    where
+        Self: Sized + Into<*mut c_void>,
+    {
+        let ptr: *mut c_void = self.into();
+        unsafe { &mut *(ptr as *mut Self::Object) }
+    }
+}
+
+macro_rules! impl_handle {
+    ($handle_name: ident, $object_name: ident) => {
+        impl Handle for $handle_name {
+            type Object = $object_name;
+        }
+        impl From<&mut $object_name> for $handle_name {
+            fn from(obj: &mut $object_name) -> Self {
+                Self::from(obj as *mut $object_name as *mut c_void)
+            }
+        }
+    };
+}
+
+impl_handle!(OfxImageEffectHandle, OfxImageEffect);
+impl_handle!(OfxParamSetHandle, OfxParamSet);
+impl_handle!(OfxPropertySetHandle, OfxPropertySet);
+
 #[derive(Default, Debug)]
 pub struct OfxParamSet {
     properties: OfxPropertySet,
@@ -48,16 +77,14 @@ impl OfxPlugin {
 }
 
 // ========= ImageEffectSuite =========
+
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
 extern "C" fn getPropertySet(
     imageEffect: OfxImageEffectHandle,
     propHandle: *mut OfxPropertySetHandle,
 ) -> OfxStatus {
-    unsafe {
-        let handle = std::ptr::addr_of_mut!((&mut *imageEffect).properties);
-        *propHandle = handle;
-    };
+    unsafe { *propHandle = (&mut imageEffect.as_ref().properties).into() };
     OfxStatus::OK
 }
 
@@ -68,8 +95,7 @@ extern "C" fn getParamSet(
     paramSet: *mut OfxParamSetHandle,
 ) -> OfxStatus {
     unsafe {
-        let handle = std::ptr::addr_of_mut!((&mut *imageEffect).params);
-        *paramSet = handle;
+        *paramSet = (&mut imageEffect.as_ref().params).into();
     };
     OfxStatus::OK
 }
@@ -327,7 +353,8 @@ fn set_property(
     value: PropertyValue,
 ) -> OfxStatus {
     if let Ok(name_str) = unsafe { CStr::from_ptr(name).to_str() } {
-        let prop = unsafe { &mut *properties }
+        let prop = properties
+            .as_ref()
             .0
             .entry(name_str.to_string())
             .or_insert(Default::default());
@@ -435,7 +462,7 @@ extern "C" fn propGetPointer(
     value: *mut *mut c_void,
 ) -> OfxStatus {
     let key = unsafe { cstr_to_string(property) };
-    let props = unsafe { &*properties };
+    let props = properties.as_ref();
     if let Some(values) = props.0.get(&key) {
         if let Some(v) = values.0.get(index as usize) {
             match v {
@@ -474,7 +501,7 @@ extern "C" fn propGetString(
     value: *mut *const c_char,
 ) -> OfxStatus {
     let key = unsafe { cstr_to_string(property) };
-    let props = unsafe { &*properties };
+    let props = properties.as_ref();
     if let Some(values) = props.0.get(&key) {
         if let Some(v) = values.0.get(index as usize) {
             match v {
@@ -520,7 +547,7 @@ extern "C" fn propGetInt(
     value: *mut c_int,
 ) -> OfxStatus {
     let key = unsafe { cstr_to_string(property) };
-    let props = unsafe { &*properties };
+    let props = properties.as_ref();
     if let Some(values) = props.0.get(&key) {
         if let Some(v) = values.0.get(index as usize) {
             match v {
@@ -603,7 +630,7 @@ extern "C" fn propGetDimension(
     count: *mut c_int,
 ) -> OfxStatus {
     let key = unsafe { cstr_to_string(property) };
-    let props = unsafe { &*properties };
+    let props = properties.as_ref();
     if let Some(values) = props.0.get(&key) {
         unsafe { *count = values.0.len() as i32 }
         OfxStatus::OK
@@ -772,10 +799,7 @@ extern "C" fn paramSetGetPropertySet(
     paramSet: OfxParamSetHandle,
     propHandle: *mut OfxPropertySetHandle,
 ) -> OfxStatus {
-    unsafe {
-        let handle = std::ptr::addr_of_mut!((&mut *paramSet).properties);
-        *propHandle = handle;
-    };
+    unsafe { *propHandle = (&mut paramSet.as_ref().properties).into() };
     OfxStatus::OK
 }
 #[allow(non_snake_case)]
@@ -1267,7 +1291,7 @@ fn main() {
         ),
     ]);
     let host = OfxHost {
-        host: &mut host_props,
+        host: (&mut host_props).into(),
         fetchSuite: fetch_suite,
     };
 
@@ -1307,21 +1331,21 @@ fn main() {
             let stat = p.call_action(
                 "OfxActionLoad",
                 std::ptr::null(),
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
+                OfxPropertySetHandle::from(std::ptr::null_mut()),
+                OfxPropertySetHandle::from(std::ptr::null_mut()),
             );
             let effect: OfxImageEffect = Default::default();
             let stat2 = p.call_action(
                 "OfxActionDescribe",
                 std::ptr::addr_of!(effect) as *const c_void,
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
+                OfxPropertySetHandle::from(std::ptr::null_mut()),
+                OfxPropertySetHandle::from(std::ptr::null_mut()),
             );
             let stat3 = p.call_action(
                 "OfxActionUnload",
                 std::ptr::null(),
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
+                OfxPropertySetHandle::from(std::ptr::null_mut()),
+                OfxPropertySetHandle::from(std::ptr::null_mut()),
             );
             println!(
                 "  {:?}, Load returned {:?}, Describe returned {:?}, Unload returned {:?}",
