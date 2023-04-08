@@ -3,6 +3,8 @@ use std::error::Error;
 use std::ffi::{c_char, c_double, c_int, c_uint, c_void, CStr, CString};
 use std::fs;
 
+mod suites;
+use suites::*;
 mod types;
 use types::*;
 
@@ -184,59 +186,6 @@ extern "C" fn imageMemoryLock(
 #[allow(unused_variables)]
 extern "C" fn imageMemoryUnlock(memoryHandle: OfxImageMemoryHandle) -> OfxStatus {
     panic!("Not implemented!")
-}
-
-#[allow(non_snake_case)]
-#[allow(dead_code)]
-#[repr(C)]
-struct OfxImageEffectSuiteV1 {
-    getPropertySet: extern "C" fn(
-        imageEffect: OfxImageEffectHandle,
-        propHandle: *mut OfxPropertySetHandle,
-    ) -> OfxStatus,
-    getParamSet: extern "C" fn(
-        imageEffect: OfxImageEffectHandle,
-        paramSet: *mut OfxParamSetHandle,
-    ) -> OfxStatus,
-    clipDefine: extern "C" fn(
-        imageEffect: OfxImageEffectHandle,
-        name: *const char,
-        propertySet: *mut OfxPropertySetHandle,
-    ) -> OfxStatus,
-    clipGetHandle: extern "C" fn(
-        imageEffect: OfxImageEffectHandle,
-        name: *const char,
-        clip: *mut OfxImageClipHandle,
-        propertySet: *mut OfxPropertySetHandle,
-    ) -> OfxStatus,
-    clipGetPropertySet: extern "C" fn(
-        clip: OfxImageClipHandle,
-        propHandle: *mut OfxPropertySetHandle,
-    ) -> OfxStatus,
-    clipGetImage: extern "C" fn(
-        clip: OfxImageClipHandle,
-        time: OfxTime,
-        region: *const OfxRectD,
-        imageHandle: *mut OfxPropertySetHandle,
-    ) -> OfxStatus,
-    clipReleaseImage: extern "C" fn(imageHandle: OfxPropertySetHandle) -> OfxStatus,
-    clipGetRegionOfDefinition: extern "C" fn(
-        clip: OfxImageClipHandle,
-        time: OfxTime,
-        bounds: *const OfxRectD,
-    ) -> OfxStatus,
-    abort: extern "C" fn(imageEffect: OfxImageEffectHandle) -> c_int,
-    imageMemoryAlloc: extern "C" fn(
-        instanceHandle: OfxImageEffectHandle,
-        nBytes: usize,
-        memoryHandle: *mut OfxImageMemoryHandle,
-    ) -> OfxStatus,
-    imageMemoryFree: extern "C" fn(memoryHandle: OfxImageMemoryHandle) -> OfxStatus,
-    imageMemoryLock: extern "C" fn(
-        memoryHandle: OfxImageMemoryHandle,
-        returnedPtr: *mut *mut c_void,
-    ) -> OfxStatus,
-    imageMemoryUnlock: extern "C" fn(memoryHandle: OfxImageMemoryHandle) -> OfxStatus,
 }
 
 const IMAGE_EFFECT_SUITE: OfxImageEffectSuiteV1 = OfxImageEffectSuiteV1 {
@@ -640,117 +589,6 @@ extern "C" fn propGetDimension(
     }
 }
 
-#[allow(non_snake_case)]
-#[allow(dead_code)]
-#[repr(C)]
-struct OfxPropertySuiteV1 {
-    propSetPointer: extern "C" fn(
-        properties: OfxPropertySetHandle,
-        property: *const c_char,
-        index: c_int,
-        value: *mut c_void,
-    ) -> OfxStatus,
-    propSetString: extern "C" fn(
-        properties: OfxPropertySetHandle,
-        property: *const c_char,
-        index: c_int,
-        value: *const c_char,
-    ) -> OfxStatus,
-    propSetDouble: extern "C" fn(
-        properties: OfxPropertySetHandle,
-        property: *const c_char,
-        index: c_int,
-        value: c_double,
-    ) -> OfxStatus,
-    propSetInt: extern "C" fn(
-        properties: OfxPropertySetHandle,
-        property: *const c_char,
-        index: c_int,
-        value: c_int,
-    ) -> OfxStatus,
-    propSetPointerN: extern "C" fn(
-        properties: OfxPropertySetHandle,
-        property: *const c_char,
-        count: c_int,
-        value: *const *mut c_void,
-    ) -> OfxStatus,
-    propSetStringN: extern "C" fn(
-        properties: OfxPropertySetHandle,
-        property: *const c_char,
-        count: c_int,
-        value: *const *const c_char,
-    ) -> OfxStatus,
-    propSetDoubleN: extern "C" fn(
-        properties: OfxPropertySetHandle,
-        property: *const c_char,
-        count: c_int,
-        value: *const c_double,
-    ) -> OfxStatus,
-    propSetIntN: extern "C" fn(
-        properties: OfxPropertySetHandle,
-        property: *const c_char,
-        count: c_int,
-        value: *const c_int,
-    ) -> OfxStatus,
-    propGetPointer: extern "C" fn(
-        properties: OfxPropertySetHandle,
-        property: *const c_char,
-        index: c_int,
-        value: *mut *mut c_void,
-    ) -> OfxStatus,
-    propGetString: extern "C" fn(
-        properties: OfxPropertySetHandle,
-        property: *const c_char,
-        index: c_int,
-        value: *mut *const c_char,
-    ) -> OfxStatus,
-    propGetDouble: extern "C" fn(
-        properties: OfxPropertySetHandle,
-        property: *const c_char,
-        index: c_int,
-        value: *mut c_double,
-    ) -> OfxStatus,
-    propGetInt: extern "C" fn(
-        properties: OfxPropertySetHandle,
-        property: *const c_char,
-        index: c_int,
-        value: *mut c_int,
-    ) -> OfxStatus,
-    propGetPointerN: extern "C" fn(
-        properties: OfxPropertySetHandle,
-        property: *const c_char,
-        count: c_int,
-        value: *mut *mut c_void,
-    ) -> OfxStatus,
-    propGetStringN: extern "C" fn(
-        properties: OfxPropertySetHandle,
-        property: *const c_char,
-        count: c_int,
-        value: *mut *const c_char,
-    ) -> OfxStatus,
-    propGetDoubleN: extern "C" fn(
-        properties: OfxPropertySetHandle,
-        property: *const c_char,
-        count: c_int,
-        value: *mut c_double,
-    ) -> OfxStatus,
-    propGetIntN: extern "C" fn(
-        properties: OfxPropertySetHandle,
-        property: *const c_char,
-        count: c_int,
-        value: *mut c_int,
-    ) -> OfxStatus,
-    propReset: extern "C" fn(
-        properties: OfxPropertySetHandle,
-        property: *const c_char,
-    ) -> OfxStatus,
-    propGetDimension: extern "C" fn(
-        properties: OfxPropertySetHandle,
-        property: *const c_char,
-        count: *mut c_int,
-    ) -> OfxStatus,
-}
-
 const PROPERTY_SUITE: OfxPropertySuiteV1 = OfxPropertySuiteV1 {
     propSetPointer,
     propSetString,
@@ -914,75 +752,6 @@ extern "C" fn paramEditEnd(paramSet: OfxParamSetHandle) -> OfxStatus {
     panic!("Not implemented!")
 }
 
-#[allow(non_snake_case)]
-#[allow(dead_code)]
-#[repr(C)]
-struct OfxParameterSuiteV1 {
-    paramDefine: extern "C" fn(
-        paramSet: OfxParamSetHandle,
-        paramType: *const c_char,
-        name: *const c_char,
-        propertySet: *mut OfxPropertySetHandle,
-    ) -> OfxStatus,
-    paramGetHandle: extern "C" fn(
-        paramSet: OfxParamSetHandle,
-        name: *const c_char,
-        param: *mut OfxParamHandle,
-        propertySet: *mut OfxPropertySetHandle,
-    ) -> OfxStatus,
-    paramSetGetPropertySet: extern "C" fn(
-        paramSet: OfxParamSetHandle,
-        propHandle: *mut OfxPropertySetHandle,
-    ) -> OfxStatus,
-    paramGetPropertySet: extern "C" fn(
-        paramHandle: OfxParamHandle,
-        propHandle: *mut OfxPropertySetHandle,
-    ) -> OfxStatus,
-    // XXX: all GetValue functions use varargs to return values
-    paramGetValue: extern "C" fn(paramHandle: OfxParamHandle) -> OfxStatus,
-    paramGetValueAtTime:
-        extern "C" fn(paramHandle: OfxParamHandle, time: OfxTime) -> OfxStatus,
-    paramGetDerivative:
-        extern "C" fn(paramHandle: OfxParamHandle, time: OfxTime) -> OfxStatus,
-    paramGetIntegral: extern "C" fn(
-        paramHandle: OfxParamHandle,
-        time1: OfxTime,
-        time2: OfxTime,
-    ) -> OfxStatus,
-    paramSetValue: extern "C" fn(paramHandle: OfxParamHandle) -> OfxStatus,
-    paramSetValueAtTime: extern "C" fn(
-        paramHandle: OfxParamHandle,
-        time: OfxTime, // time in frames
-    ) -> OfxStatus,
-    paramGetNumKeys: extern "C" fn(
-        paramHandle: OfxParamHandle,
-        numberOfKeys: *mut c_uint,
-    ) -> OfxStatus,
-    paramGetKeyTime: extern "C" fn(
-        paramHandle: OfxParamHandle,
-        nthKey: c_uint,
-        time: *mut OfxTime,
-    ) -> OfxStatus,
-    paramGetKeyIndex: extern "C" fn(
-        paramHandle: OfxParamHandle,
-        time: OfxTime,
-        direction: c_int,
-        index: *mut c_int,
-    ) -> OfxStatus,
-    paramDeleteKey:
-        extern "C" fn(paramHandle: OfxParamHandle, time: OfxTime) -> OfxStatus,
-    paramDeleteAllKeys: extern "C" fn(paramHandle: OfxParamHandle) -> OfxStatus,
-    paramCopy: extern "C" fn(
-        paramTo: OfxParamHandle,
-        paramFrom: OfxParamHandle,
-        dstOffset: OfxTime,
-        frameRange: *const OfxRangeD,
-    ) -> OfxStatus,
-    paramEditBegin:
-        extern "C" fn(paramSet: OfxParamSetHandle, name: *const c_char) -> OfxStatus,
-    paramEditEnd: extern "C" fn(paramSet: OfxParamSetHandle) -> OfxStatus,
-}
-
 const PARAMETER_SUITE: OfxParameterSuiteV1 = OfxParameterSuiteV1 {
     paramDefine,
     paramGetHandle,
@@ -1016,19 +785,6 @@ extern "C" fn message(
     panic!("Not implemented!")
 }
 
-#[allow(non_snake_case)]
-#[allow(dead_code)]
-#[repr(C)]
-struct OfxMessageSuiteV1 {
-    // XXX: uses varargs
-    message: extern "C" fn(
-        handle: *mut c_void,
-        messageType: *const c_char,
-        messageId: *const c_char,
-        format: *const c_char,
-    ) -> OfxStatus,
-}
-
 const MESSAGE_SUITE: OfxMessageSuiteV1 = OfxMessageSuiteV1 { message };
 
 // ========= Memory suite =========
@@ -1047,30 +803,12 @@ extern "C" fn memoryFree(allocatedData: *mut c_void) -> OfxStatus {
     panic!("Not implemented!")
 }
 
-#[allow(non_snake_case)]
-#[allow(dead_code)]
-#[repr(C)]
-struct OfxMemorySuiteV1 {
-    memoryAlloc: extern "C" fn(
-        handle: *mut c_void,
-        nBytes: usize,
-        allocatedData: *mut *mut c_void,
-    ) -> OfxStatus,
-    memoryFree: extern "C" fn(allocatedData: *mut c_void) -> OfxStatus,
-}
-
 const MEMORY_SUITE: OfxMemorySuiteV1 = OfxMemorySuiteV1 {
     memoryAlloc,
     memoryFree,
 };
 
 // ========= Multithread suite =========
-
-type OfxThreadFunctionV1 = extern "C" fn(
-    threadIndex: c_uint,
-    threadMax: c_uint,
-    customArg: *mut c_void,
-) -> OfxStatus;
 
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
@@ -1120,25 +858,6 @@ extern "C" fn mutexUnLock(mutex: OfxMutexConstHandle) -> OfxStatus {
 #[allow(unused_variables)]
 extern "C" fn mutexTryLock(mutex: OfxMutexConstHandle) -> OfxStatus {
     panic!("Not implemented!")
-}
-
-#[allow(non_snake_case)]
-#[allow(dead_code)]
-#[repr(C)]
-struct OfxMultiThreadSuiteV1 {
-    multiThread: extern "C" fn(
-        func: OfxThreadFunctionV1,
-        nThreads: c_uint,
-        customArg: *mut c_void,
-    ) -> OfxStatus,
-    multiThreadNumCPUs: extern "C" fn(nCPUs: *mut c_int) -> OfxStatus,
-    multiThreadIndex: extern "C" fn(threadIndex: *mut c_int) -> OfxStatus,
-    multiThreadIsSpawnedThread: extern "C" fn() -> c_int,
-    mutexCreate: extern "C" fn(mutex: OfxMutexHandle, lockCount: c_int) -> OfxStatus,
-    mutexDestroy: extern "C" fn(mutex: OfxMutexConstHandle) -> OfxStatus,
-    mutexLock: extern "C" fn(mutex: OfxMutexConstHandle) -> OfxStatus,
-    mutexUnLock: extern "C" fn(mutex: OfxMutexConstHandle) -> OfxStatus,
-    mutexTryLock: extern "C" fn(mutex: OfxMutexConstHandle) -> OfxStatus,
 }
 
 const MULTI_THREAD_SUITE: OfxMultiThreadSuiteV1 = OfxMultiThreadSuiteV1 {
