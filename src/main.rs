@@ -3,86 +3,18 @@ use std::error::Error;
 use std::ffi::{c_char, c_double, c_int, c_uint, c_void, CStr, CString};
 use std::fs;
 
+mod types;
+use types::*;
+
 #[derive(Default, Debug)]
-struct OfxParamSet {
+pub struct OfxParamSet {
     properties: OfxPropertySet,
 }
 
 #[derive(Default, Debug)]
-struct OfxImageEffect {
+pub struct OfxImageEffect {
     properties: OfxPropertySet,
     params: OfxParamSet,
-}
-
-type OfxImageEffectHandle = *mut OfxImageEffect;
-type OfxParamSetHandle = *mut OfxParamSet;
-type OfxParamHandle = *mut c_void;
-type OfxImageClipHandle = *mut c_void;
-type OfxImageMemoryHandle = *mut c_void;
-type OfxMutexHandle = *mut c_void;
-type OfxMutexConstHandle = *const c_void;
-
-// TODO: test that i32 and c_int are the same size
-#[repr(i32)]
-#[derive(Debug, PartialEq)]
-#[allow(dead_code)]
-enum OfxStatus {
-    OK = 0,
-    Failed = 1,
-    ErrFatal = 2,
-    ErrUnknown = 3,
-    ErrMissingHostFeature = 4,
-    ErrUnsupported = 5,
-    ErrExists = 6,
-    ErrFormat = 7,
-    ErrMemory = 8,
-    ErrBadHandle = 9,
-    ErrBadIndex = 10,
-    ErrValue = 11,
-    ReplyYes = 12,
-    ReplyNo = 13,
-    ReplyDefault = 14,
-}
-
-type OfxTime = c_double;
-#[allow(dead_code)]
-#[repr(C)]
-struct OfxRectD {
-    x1: c_double,
-    y1: c_double,
-    x2: c_double,
-    y2: c_double,
-}
-#[allow(dead_code)]
-#[repr(C)]
-struct OfxRangeD {
-    min: c_double,
-    max: c_double,
-}
-
-#[allow(non_snake_case)]
-#[repr(C)]
-struct OfxHost {
-    host: OfxPropertySetHandle,
-    fetchSuite:
-        extern "C" fn(OfxPropertySetHandle, *const c_char, c_int) -> *const c_void,
-}
-
-#[allow(non_snake_case)]
-#[repr(C)]
-struct OfxPluginRaw {
-    pluginApi: *const c_char,
-    apiVersion: c_int,
-    pluginIdentifier: *const c_char,
-    pluginVersionMajor: c_uint,
-    pluginVersionMinor: c_uint,
-    setHost: extern "C" fn(*const OfxHost),
-    mainEntry: extern "C" fn(
-        *const c_char,
-        *const c_void,
-        OfxPropertySetHandle,
-        OfxPropertySetHandle,
-    ) -> OfxStatus,
 }
 
 #[derive(Debug)]
@@ -376,7 +308,7 @@ where
 }
 
 #[derive(Default, Debug)]
-struct OfxPropertySet(HashMap<String, Property>);
+pub struct OfxPropertySet(HashMap<String, Property>);
 
 impl<const S: usize> From<[(&str, Property); S]> for OfxPropertySet {
     fn from(slice: [(&str, Property); S]) -> Self {
@@ -387,8 +319,6 @@ impl<const S: usize> From<[(&str, Property); S]> for OfxPropertySet {
         Self(map)
     }
 }
-
-type OfxPropertySetHandle = *mut OfxPropertySet;
 
 fn set_property(
     properties: OfxPropertySetHandle,
