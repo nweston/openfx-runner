@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::ffi::{c_char, c_int, c_void, CStr, CString};
 use std::fs;
+use std::string::String;
 
 mod suite_impls;
 mod suites;
@@ -36,6 +37,33 @@ macro_rules! impl_handle {
 impl_handle!(OfxImageEffectHandle, OfxImageEffect);
 impl_handle!(OfxParamSetHandle, OfxParamSet);
 impl_handle!(OfxPropertySetHandle, OfxPropertySet);
+
+#[derive(Debug)]
+struct GenericError {
+    message: String,
+    source: Box<dyn Error>,
+}
+
+impl std::fmt::Display for GenericError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl Error for GenericError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&*self.source)
+    }
+}
+
+impl From<&str> for GenericError {
+    fn from(s: &str) -> Self {
+        Self {
+            message: s.into(),
+            source: s.into(),
+        }
+    }
+}
 
 #[derive(Default, Debug)]
 pub struct OfxParamSet {
@@ -172,31 +200,43 @@ fn plist_path(bundle_path: &std::path::Path) -> std::path::PathBuf {
     bundle_path.join("Contents/Info.plist")
 }
 
+#[derive(Debug)]
 struct OfxBundle {
     path: std::path::PathBuf,
     plist: plist::Value,
 }
 
-fn make_bundle(path: std::path::PathBuf) -> Result<OfxBundle, Box<dyn Error>> {
-    let plist = plist::Value::from_file(plist_path(&path))?;
-    Ok(OfxBundle { path, plist })
-}
+impl OfxBundle {
+    fn new(path: std::path::PathBuf) -> Result<Self, Box<dyn Error>> {
+        let file = plist_path(&path);
+        let plist = plist::Value::from_file(file.clone()).map_err(|e| GenericError {
+            message: format!("Failed reading plist \"{}\"", file.display()).into(),
+            source: e.into(),
+        })?;
+        Ok(Self { path, plist })
+    }
 
-fn library_path(bundle: &OfxBundle) -> std::path::PathBuf {
-    let lib = bundle
-        .plist
-        .as_dictionary()
-        .unwrap()
-        .get("CFBundleExecutable")
-        .unwrap()
-        .as_string()
-        .unwrap();
-    if cfg!(target_os = "linux") {
-        bundle.path.join("Contents/Linux-x86-64").join(lib)
-    } else if cfg!(windows) {
-        return bundle.path.join("Contents/Win64").join(lib);
-    } else {
-        return bundle.path.join("Contents/MacOS").join(lib);
+    fn library_path(&self) -> Result<std::path::PathBuf, &str> {
+        self.plist
+            .as_dictionary()
+            .ok_or("Malformed plist")?
+            .get("CFBundleExecutable")
+            .ok_or("CFBundleExecutable not found in plist")?
+            .as_string()
+            .ok_or("CFBundleExecutable is not a string")
+            .map(|lib_name| {
+                if cfg!(target_os = "linux") {
+                    self.path.join("Contents/Linux-x86-64").join(lib_name)
+                } else if cfg!(windows) {
+                    self.path.join("Contents/Win64").join(lib_name)
+                } else {
+                    self.path.join("Contents/MacOS").join(lib_name)
+                }
+            })
+    }
+
+    fn load(&self) -> Result<libloading::Library, Box<dyn Error>> {
+        Ok(unsafe { libloading::Library::new(self.library_path()?)? })
     }
 }
 
@@ -207,7 +247,17 @@ fn ofx_bundles() -> Vec<OfxBundle> {
             if path.is_dir() {
                 if let Some(f) = path.file_name() {
                     if f.to_str().map_or(false, |s| s.ends_with(".ofx.bundle")) {
-                        return make_bundle(path).ok();
+                        match OfxBundle::new(path.clone()) {
+                            Ok(b) => return Some(b),
+                            Err(e) => {
+                                println!(
+                                    "Error loading bundle {}: {}",
+                                    path.display(),
+                                    e
+                                );
+                                return None;
+                            }
+                        }
                     }
                 }
             }
@@ -251,6 +301,69 @@ extern "C" fn fetch_suite(
         println!("fetch_suite: {} v{} is not available", suite, version);
         std::ptr::null()
     }
+}
+
+fn get_plugins(lib: &libloading::Library) -> Result<Vec<OfxPlugin>, Box<dyn Error>> {
+    let mut plugins = Vec::new();
+    unsafe {
+        let number_of_plugins: libloading::Symbol<unsafe extern "C" fn() -> i32> =
+            lib.get(b"OfxGetNumberOfPlugins")?;
+        let count = number_of_plugins();
+        let get_plugin: libloading::Symbol<
+            unsafe extern "C" fn(i32) -> *const OfxPluginRaw,
+        > = lib.get(b"OfxGetPlugin")?;
+        for i in 0..count {
+            let p = &*get_plugin(i);
+            plugins.push(OfxPlugin {
+                plugin_api: cstr_to_string(p.pluginApi),
+                api_version: p.apiVersion,
+                plugin_identifier: cstr_to_string(p.pluginIdentifier),
+                plugin_version_major: p.pluginVersionMajor,
+                plugin_version_minor: p.pluginVersionMinor,
+                set_host: p.setHost,
+                main_entry: p.mainEntry,
+            })
+        }
+    }
+    Ok(plugins)
+}
+
+fn process_bundle(host: &OfxHost, bundle: &OfxBundle) -> Result<(), Box<dyn Error>> {
+    let lib = bundle.load()?;
+    let plugins = get_plugins(&lib)?;
+
+    println!("{}, => {}", bundle.path.display(), plugins.len());
+    for p in plugins {
+        (p.set_host)(host);
+        let stat = p.call_action(
+            "OfxActionLoad",
+            std::ptr::null(),
+            OfxPropertySetHandle::from(std::ptr::null_mut()),
+            OfxPropertySetHandle::from(std::ptr::null_mut()),
+        );
+        let effect: OfxImageEffect = Default::default();
+        let stat2 = p.call_action(
+            "OfxActionDescribe",
+            std::ptr::addr_of!(effect) as *const c_void,
+            OfxPropertySetHandle::from(std::ptr::null_mut()),
+            OfxPropertySetHandle::from(std::ptr::null_mut()),
+        );
+        let stat3 = p.call_action(
+            "OfxActionUnload",
+            std::ptr::null(),
+            OfxPropertySetHandle::from(std::ptr::null_mut()),
+            OfxPropertySetHandle::from(std::ptr::null_mut()),
+        );
+        println!(
+            "  {:?}, Load returned {:?}, Describe returned {:?}, Unload returned {:?}",
+            p, stat, stat2, stat3
+        );
+        if stat2 == OfxStatus::OK {
+            println!("{:?}", effect)
+        }
+    }
+    println!();
+    Ok(())
 }
 
 fn main() {
@@ -310,65 +423,99 @@ fn main() {
     };
 
     for bundle in ofx_bundles() {
-        let count;
-        let mut plugins = Vec::new();
+        if let Err(e) = process_bundle(&host, &bundle) {
+            println!("Error processing bundle {}: {}", bundle.path.display(), e);
+        }
+    }
+}
 
-        unsafe {
-            let lib = libloading::Library::new(library_path(&bundle)).unwrap();
-            let func: libloading::Symbol<unsafe extern "C" fn() -> i32> =
-                lib.get(b"OfxGetNumberOfPlugins").unwrap();
-            count = func();
-            let func2: libloading::Symbol<
-                unsafe extern "C" fn(i32) -> *const OfxPluginRaw,
-            > = lib.get(b"OfxGetPlugin").unwrap();
-            for i in 0..count {
-                let p = &*func2(i);
-                plugins.push(OfxPlugin {
-                    plugin_api: cstr_to_string(p.pluginApi),
-                    api_version: p.apiVersion,
-                    plugin_identifier: cstr_to_string(p.pluginIdentifier),
-                    plugin_version_major: p.pluginVersionMajor,
-                    plugin_version_minor: p.pluginVersionMinor,
-                    set_host: p.setHost,
-                    main_entry: p.mainEntry,
-                })
-            }
+#[cfg(test)]
+mod test {
+    use crate::*;
+
+    fn bundle_from_plist(name: &str) -> OfxBundle {
+        OfxBundle {
+            path: "fake".into(),
+            plist: plist::Value::from_file("test/".to_owned() + name + ".plist").unwrap(),
         }
-        println!(
-            "{}, {} => {}",
-            bundle.path.display(),
-            library_path(&bundle).display(),
-            count
+    }
+
+    #[test]
+    fn missing_plist() {
+        assert_eq!(
+            OfxBundle::new("test/Empty.ofx.bundle".into())
+                .unwrap_err()
+                .to_string(),
+            "Failed reading plist \"test/Empty.ofx.bundle/Contents/Info.plist\""
         );
-        for p in plugins {
-            (p.set_host)(&host);
-            let stat = p.call_action(
-                "OfxActionLoad",
-                std::ptr::null(),
-                OfxPropertySetHandle::from(std::ptr::null_mut()),
-                OfxPropertySetHandle::from(std::ptr::null_mut()),
-            );
-            let effect: OfxImageEffect = Default::default();
-            let stat2 = p.call_action(
-                "OfxActionDescribe",
-                std::ptr::addr_of!(effect) as *const c_void,
-                OfxPropertySetHandle::from(std::ptr::null_mut()),
-                OfxPropertySetHandle::from(std::ptr::null_mut()),
-            );
-            let stat3 = p.call_action(
-                "OfxActionUnload",
-                std::ptr::null(),
-                OfxPropertySetHandle::from(std::ptr::null_mut()),
-                OfxPropertySetHandle::from(std::ptr::null_mut()),
-            );
-            println!(
-                "  {:?}, Load returned {:?}, Describe returned {:?}, Unload returned {:?}",
-                p, stat, stat2, stat3
-            );
-            if stat2 == OfxStatus::OK {
-                println!("{:?}", effect)
-            }
-        }
-        println!()
+    }
+
+    #[test]
+    fn unparseable_plist() {
+        assert_eq!(
+            OfxBundle::new("test/Unparseable.ofx.bundle".into())
+                .unwrap_err()
+                .to_string(),
+            "Failed reading plist \"test/Unparseable.ofx.bundle/Contents/Info.plist\""
+        );
+    }
+
+    #[test]
+    fn no_exe() {
+        assert_eq!(
+            OfxBundle::new("test/NoExe.ofx.bundle".into())
+                .unwrap()
+                .load()
+                .unwrap_err()
+                .to_string(),
+            "test/NoExe.ofx.bundle/Contents/Linux-x86-64/test.ofx: cannot open shared object file: No such file or directory"
+        );
+    }
+
+    #[test]
+    fn no_executable_name() {
+        assert_eq!(
+            bundle_from_plist("no-exe-name")
+                .load()
+                .unwrap_err()
+                .to_string(),
+            "CFBundleExecutable not found in plist"
+        );
+    }
+
+    #[test]
+    fn executable_name_not_a_string() {
+        assert_eq!(
+            bundle_from_plist("not-a-string")
+                .load()
+                .unwrap_err()
+                .to_string(),
+            "CFBundleExecutable is not a string"
+        );
+    }
+
+    #[test]
+    fn plist_not_a_dict() {
+        assert_eq!(
+            bundle_from_plist("not-a-dict")
+                .load()
+                .unwrap_err()
+                .to_string(),
+            "Malformed plist"
+        );
+    }
+
+    #[test]
+    fn missing_functions() {
+        let lib1 = unsafe { libloading::Library::new("test/no-functions").unwrap() };
+        assert_eq!(
+            get_plugins(&lib1).unwrap_err().to_string(),
+            "test/no-functions: undefined symbol: OfxGetNumberOfPlugins"
+        );
+        let lib2 = unsafe { libloading::Library::new("test/no-getplugin").unwrap() };
+        assert_eq!(
+            get_plugins(&lib2).unwrap_err().to_string(),
+            "test/no-getplugin: undefined symbol: OfxGetPlugin"
+        );
     }
 }
