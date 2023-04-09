@@ -34,9 +34,9 @@ macro_rules! impl_handle {
     };
 }
 
-impl_handle!(OfxImageEffectHandle, OfxImageEffect);
-impl_handle!(OfxParamSetHandle, OfxParamSet);
-impl_handle!(OfxPropertySetHandle, OfxPropertySet);
+impl_handle!(OfxImageEffectHandle, ImageEffect);
+impl_handle!(OfxParamSetHandle, ParamSet);
+impl_handle!(OfxPropertySetHandle, PropertySet);
 
 #[derive(Debug)]
 struct GenericError {
@@ -66,19 +66,19 @@ impl From<&str> for GenericError {
 }
 
 #[derive(Default, Debug)]
-pub struct OfxParamSet {
-    properties: OfxPropertySet,
+pub struct ParamSet {
+    properties: PropertySet,
 }
 
 #[derive(Default, Debug)]
-pub struct OfxImageEffect {
-    properties: OfxPropertySet,
-    params: OfxParamSet,
+pub struct ImageEffect {
+    properties: PropertySet,
+    params: ParamSet,
 }
 
 #[derive(Debug)]
 #[allow(dead_code)]
-struct OfxPlugin {
+struct Plugin {
     plugin_api: String,
     api_version: i32,
     plugin_identifier: String,
@@ -93,7 +93,7 @@ struct OfxPlugin {
     ) -> OfxStatus,
 }
 
-impl OfxPlugin {
+impl Plugin {
     fn call_action(
         &self,
         action: &str,
@@ -184,9 +184,9 @@ where
 }
 
 #[derive(Default, Debug)]
-pub struct OfxPropertySet(HashMap<String, Property>);
+pub struct PropertySet(HashMap<String, Property>);
 
-impl<const S: usize> From<[(&str, Property); S]> for OfxPropertySet {
+impl<const S: usize> From<[(&str, Property); S]> for PropertySet {
     fn from(slice: [(&str, Property); S]) -> Self {
         let mut map = HashMap::new();
         for (name, value) in slice {
@@ -201,12 +201,12 @@ fn plist_path(bundle_path: &std::path::Path) -> std::path::PathBuf {
 }
 
 #[derive(Debug)]
-struct OfxBundle {
+struct Bundle {
     path: std::path::PathBuf,
     plist: plist::Value,
 }
 
-impl OfxBundle {
+impl Bundle {
     fn new(path: std::path::PathBuf) -> Result<Self, Box<dyn Error>> {
         let file = plist_path(&path);
         let plist = plist::Value::from_file(file.clone()).map_err(|e| GenericError {
@@ -240,14 +240,14 @@ impl OfxBundle {
     }
 }
 
-fn ofx_bundles() -> Vec<OfxBundle> {
+fn ofx_bundles() -> Vec<Bundle> {
     if let Ok(dir) = fs::read_dir("/usr/OFX/Plugins/") {
         let x = dir.filter_map(|entry| {
             let path: std::path::PathBuf = entry.ok()?.path();
             if path.is_dir() {
                 if let Some(f) = path.file_name() {
                     if f.to_str().map_or(false, |s| s.ends_with(".ofx.bundle")) {
-                        match OfxBundle::new(path.clone()) {
+                        match Bundle::new(path.clone()) {
                             Ok(b) => return Some(b),
                             Err(e) => {
                                 println!(
@@ -303,18 +303,18 @@ extern "C" fn fetch_suite(
     }
 }
 
-fn get_plugins(lib: &libloading::Library) -> Result<Vec<OfxPlugin>, Box<dyn Error>> {
+fn get_plugins(lib: &libloading::Library) -> Result<Vec<Plugin>, Box<dyn Error>> {
     let mut plugins = Vec::new();
     unsafe {
         let number_of_plugins: libloading::Symbol<unsafe extern "C" fn() -> i32> =
             lib.get(b"OfxGetNumberOfPlugins")?;
         let count = number_of_plugins();
         let get_plugin: libloading::Symbol<
-            unsafe extern "C" fn(i32) -> *const OfxPluginRaw,
+            unsafe extern "C" fn(i32) -> *const OfxPlugin,
         > = lib.get(b"OfxGetPlugin")?;
         for i in 0..count {
             let p = &*get_plugin(i);
-            plugins.push(OfxPlugin {
+            plugins.push(Plugin {
                 plugin_api: cstr_to_string(p.pluginApi),
                 api_version: p.apiVersion,
                 plugin_identifier: cstr_to_string(p.pluginIdentifier),
@@ -328,7 +328,7 @@ fn get_plugins(lib: &libloading::Library) -> Result<Vec<OfxPlugin>, Box<dyn Erro
     Ok(plugins)
 }
 
-fn process_bundle(host: &OfxHost, bundle: &OfxBundle) -> Result<(), Box<dyn Error>> {
+fn process_bundle(host: &OfxHost, bundle: &Bundle) -> Result<(), Box<dyn Error>> {
     let lib = bundle.load()?;
     let plugins = get_plugins(&lib)?;
 
@@ -341,7 +341,7 @@ fn process_bundle(host: &OfxHost, bundle: &OfxBundle) -> Result<(), Box<dyn Erro
             OfxPropertySetHandle::from(std::ptr::null_mut()),
             OfxPropertySetHandle::from(std::ptr::null_mut()),
         );
-        let effect: OfxImageEffect = Default::default();
+        let effect: ImageEffect = Default::default();
         let stat2 = p.call_action(
             "OfxActionDescribe",
             std::ptr::addr_of!(effect) as *const c_void,
@@ -372,7 +372,7 @@ fn main() {
         .split('.')
         .map(|s| s.parse::<c_int>().unwrap())
         .collect();
-    let mut host_props = OfxPropertySet::from([
+    let mut host_props = PropertySet::from([
         ("OfxPropName", "openfx-driver".into()),
         ("OfxPropLabel", "OpenFX Driver".into()),
         ("OfxPropVersion", version.into()),
@@ -433,8 +433,8 @@ fn main() {
 mod test {
     use crate::*;
 
-    fn bundle_from_plist(name: &str) -> OfxBundle {
-        OfxBundle {
+    fn bundle_from_plist(name: &str) -> Bundle {
+        Bundle {
             path: "fake".into(),
             plist: plist::Value::from_file("test/".to_owned() + name + ".plist").unwrap(),
         }
@@ -443,7 +443,7 @@ mod test {
     #[test]
     fn missing_plist() {
         assert_eq!(
-            OfxBundle::new("test/Empty.ofx.bundle".into())
+            Bundle::new("test/Empty.ofx.bundle".into())
                 .unwrap_err()
                 .to_string(),
             "Failed reading plist \"test/Empty.ofx.bundle/Contents/Info.plist\""
@@ -453,7 +453,7 @@ mod test {
     #[test]
     fn unparseable_plist() {
         assert_eq!(
-            OfxBundle::new("test/Unparseable.ofx.bundle".into())
+            Bundle::new("test/Unparseable.ofx.bundle".into())
                 .unwrap_err()
                 .to_string(),
             "Failed reading plist \"test/Unparseable.ofx.bundle/Contents/Info.plist\""
@@ -463,7 +463,7 @@ mod test {
     #[test]
     fn no_exe() {
         assert_eq!(
-            OfxBundle::new("test/NoExe.ofx.bundle".into())
+            Bundle::new("test/NoExe.ofx.bundle".into())
                 .unwrap()
                 .load()
                 .unwrap_err()

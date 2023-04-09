@@ -76,7 +76,7 @@ pub struct OfxHost {
 
 #[allow(non_snake_case)]
 #[repr(C)]
-pub struct OfxPluginRaw {
+pub struct OfxPlugin {
     pub pluginApi: *const c_char,
     pub apiVersion: c_int,
     pub pluginIdentifier: *const c_char,
