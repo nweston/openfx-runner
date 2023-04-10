@@ -5,6 +5,7 @@ use std::ffi::{c_char, c_double, c_int, c_uint, c_void};
 macro_rules! handle {
     ($name: ident) => {
         #[repr(C)]
+        #[derive(Clone, Copy)]
         pub struct $name(*mut c_void);
         impl From<$name> for *mut c_void {
             fn from(handle: $name) -> Self {
