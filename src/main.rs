@@ -335,32 +335,38 @@ fn process_bundle(host: &OfxHost, bundle: &Bundle) -> Result<(), Box<dyn Error>>
     println!("{}, => {}", bundle.path.display(), plugins.len());
     for p in plugins {
         (p.set_host)(host);
-        let stat = p.call_action(
-            "OfxActionLoad",
-            std::ptr::null(),
-            OfxPropertySetHandle::from(std::ptr::null_mut()),
-            OfxPropertySetHandle::from(std::ptr::null_mut()),
+        println!("{:?}", p);
+        println!(
+            " load: {:?}",
+            p.call_action(
+                "OfxActionLoad",
+                std::ptr::null(),
+                OfxPropertySetHandle::from(std::ptr::null_mut()),
+                OfxPropertySetHandle::from(std::ptr::null_mut()),
+            )
         );
         let effect: ImageEffect = Default::default();
-        let stat2 = p.call_action(
-            "OfxActionDescribe",
-            std::ptr::addr_of!(effect) as *const c_void,
-            OfxPropertySetHandle::from(std::ptr::null_mut()),
-            OfxPropertySetHandle::from(std::ptr::null_mut()),
-        );
-        let stat3 = p.call_action(
-            "OfxActionUnload",
-            std::ptr::null(),
-            OfxPropertySetHandle::from(std::ptr::null_mut()),
-            OfxPropertySetHandle::from(std::ptr::null_mut()),
-        );
         println!(
-            "  {:?}, Load returned {:?}, Describe returned {:?}, Unload returned {:?}",
-            p, stat, stat2, stat3
+            " describe: {:?}",
+            p.call_action(
+                "OfxActionDescribe",
+                std::ptr::addr_of!(effect) as *const c_void,
+                OfxPropertySetHandle::from(std::ptr::null_mut()),
+                OfxPropertySetHandle::from(std::ptr::null_mut()),
+            )
         );
-        if stat2 == OfxStatus::OK {
-            println!("{:?}", effect)
-        }
+
+        println!(
+            " unload: {:?}",
+            p.call_action(
+                "OfxActionUnload",
+                std::ptr::null(),
+                OfxPropertySetHandle::from(std::ptr::null_mut()),
+                OfxPropertySetHandle::from(std::ptr::null_mut()),
+            )
+        );
+
+        println!(" effect: {:?}", effect);
     }
     println!();
     Ok(())
