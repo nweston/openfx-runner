@@ -30,16 +30,24 @@ extern "C" fn getParamSet(
 #[allow(unused_variables)]
 extern "C" fn clipDefine(
     imageEffect: OfxImageEffectHandle,
-    name: *const char,
+    name: *const c_char,
     propertySet: *mut OfxPropertySetHandle,
 ) -> OfxStatus {
-    panic!("Not implemented!")
+    if let Ok(name_str) = unsafe { CStr::from_ptr(name).to_str() } {
+        let clip = imageEffect.as_ref().create_clip(name_str);
+        unsafe {
+            *propertySet = clip.into();
+        }
+        OfxStatus::OK
+    } else {
+        OfxStatus::ErrUnknown
+    }
 }
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
 extern "C" fn clipGetHandle(
     imageEffect: OfxImageEffectHandle,
-    name: *const char,
+    name: *const c_char,
     clip: *mut OfxImageClipHandle,
     propertySet: *mut OfxPropertySetHandle,
 ) -> OfxStatus {
@@ -454,7 +462,20 @@ extern "C" fn paramDefine(
     name: *const c_char,
     propertySet: *mut OfxPropertySetHandle,
 ) -> OfxStatus {
-    panic!("Not implemented!")
+    if let (Ok(type_str), Ok(name_str)) = unsafe {
+        (
+            CStr::from_ptr(paramType).to_str(),
+            CStr::from_ptr(name).to_str(),
+        )
+    } {
+        let param = paramSet.as_ref().create_param(type_str, name_str);
+        unsafe {
+            *propertySet = (&mut param.properties).into();
+        }
+        OfxStatus::OK
+    } else {
+        OfxStatus::ErrUnknown
+    }
 }
 #[allow(non_snake_case)]
 #[allow(unused_variables)]

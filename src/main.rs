@@ -9,6 +9,7 @@ use constants::actions::*;
 use constants::host::*;
 use constants::image_effect::*;
 use constants::misc::*;
+use constants::param::*;
 use constants::properties::*;
 use constants::suites::*;
 mod suite_impls;
@@ -72,15 +73,97 @@ impl From<&str> for GenericError {
     }
 }
 
-#[derive(Default, Debug)]
-pub struct ParamSet {
+#[derive(Debug)]
+#[allow(dead_code)]
+enum ParamType {
+    Boolean,
+    Choice,
+    Custom,
+    Double,
+    Double2D,
+    Double3D,
+    Group,
+    Integer,
+    Integer2D,
+    Integer3D,
+    Page,
+    Parametric,
+    PushButton,
+    RGB,
+    RGBA,
+    StrChoice,
+    String,
+}
+
+impl ParamType {
+    fn from_name(name: &str) -> Self {
+        if name == OfxParamTypeBoolean {
+            Self::Boolean
+        } else if name == OfxParamTypeChoice {
+            Self::Choice
+        } else if name == OfxParamTypeDouble {
+            Self::Double
+        } else if name == OfxParamTypeGroup {
+            Self::Group
+        } else if name == OfxParamTypeInteger {
+            Self::Integer
+        } else if name == OfxParamTypePage {
+            Self::Page
+        } else if name == OfxParamTypeRGB {
+            Self::RGB
+        } else if name == OfxParamTypePushButton {
+            Self::PushButton
+        } else if name == OfxParamTypeString {
+            Self::String
+        } else {
+            dbg!(name);
+            panic!("Not implemented")
+        }
+    }
+}
+
+// Static properties of a parameter
+#[derive(Debug)]
+#[allow(dead_code)]
+struct ParamDefinition {
+    name: String,
+    kind: ParamType,
     properties: PropertySet,
+}
+
+#[derive(Default, Debug)]
+struct ParamSet {
+    properties: PropertySet,
+    params: HashMap<String, Box<ParamDefinition>>,
+}
+
+impl ParamSet {
+    fn create_param(&mut self, kind: &str, name: &str) -> &mut ParamDefinition {
+        self.params.insert(
+            name.into(),
+            Box::new(ParamDefinition {
+                name: name.into(),
+                kind: ParamType::from_name(kind),
+                properties: Default::default(),
+            }),
+        );
+        self.params.get_mut(name).unwrap()
+    }
 }
 
 #[derive(Default, Debug)]
 pub struct ImageEffect {
     properties: PropertySet,
     params: ParamSet,
+    // FIXME: do something more robust wi/ handles
+    clips: HashMap<String, Box<PropertySet>>,
+}
+
+impl ImageEffect {
+    fn create_clip(&mut self, name: &str) -> &mut PropertySet {
+        self.clips.insert(name.into(), Default::default());
+        self.clips.get_mut(name).unwrap()
+    }
 }
 
 #[derive(Debug)]
@@ -119,7 +202,7 @@ impl Plugin {
 struct Addr(*const c_void);
 unsafe impl Send for Addr {}
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 #[allow(dead_code)]
 enum PropertyValue {
     Pointer(Addr),
@@ -369,6 +452,35 @@ fn process_bundle(host: &OfxHost, bundle: &Bundle) -> Result<(), Box<dyn Error>>
             )
         );
 
+        assert!(effect
+            .properties
+            .0
+            .get(OfxImageEffectPropSupportedContexts)
+            .map(|p| p.0.contains(&OfxImageEffectContextFilter.into()))
+            .unwrap_or(false));
+        assert!(effect
+            .properties
+            .0
+            .get(OfxImageEffectPropSupportedPixelDepths)
+            .map(|p| p.0.contains(&OfxBitDepthFloat.into()))
+            .unwrap_or(false));
+
+        let filter: ImageEffect = Default::default();
+        let mut filter_inargs = PropertySet::from([(
+            OfxImageEffectPropContext,
+            OfxImageEffectContextFilter.into(),
+        )]);
+
+        println!(
+            " describe filter: {:?}",
+            p.call_action(
+                OfxImageEffectActionDescribeInContext,
+                std::ptr::addr_of!(filter) as *const c_void,
+                OfxPropertySetHandle::from(&mut filter_inargs),
+                OfxPropertySetHandle::from(std::ptr::null_mut()),
+            )
+        );
+
         println!(
             " unload: {:?}",
             p.call_action(
@@ -380,6 +492,7 @@ fn process_bundle(host: &OfxHost, bundle: &Bundle) -> Result<(), Box<dyn Error>>
         );
 
         println!(" effect: {:?}", effect);
+        println!(" filter: {:?}", filter);
     }
     println!();
     Ok(())

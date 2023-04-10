@@ -15,12 +15,12 @@ pub struct OfxImageEffectSuiteV1 {
     ) -> OfxStatus,
     pub clipDefine: extern "C" fn(
         imageEffect: OfxImageEffectHandle,
-        name: *const char,
+        name: *const c_char,
         propertySet: *mut OfxPropertySetHandle,
     ) -> OfxStatus,
     pub clipGetHandle: extern "C" fn(
         imageEffect: OfxImageEffectHandle,
-        name: *const char,
+        name: *const c_char,
         clip: *mut OfxImageClipHandle,
         propertySet: *mut OfxPropertySetHandle,
     ) -> OfxStatus,
