@@ -4,6 +4,13 @@ use std::ffi::{c_char, c_int, c_void, CStr, CString};
 use std::fs;
 use std::string::String;
 
+pub mod constants;
+use constants::actions::*;
+use constants::host::*;
+use constants::image_effect::*;
+use constants::misc::*;
+use constants::properties::*;
+use constants::suites::*;
 mod suite_impls;
 mod suites;
 mod types;
@@ -279,22 +286,22 @@ extern "C" fn fetch_suite(
     version: c_int,
 ) -> *const c_void {
     let suite = unsafe { CStr::from_ptr(name).to_str().unwrap() };
-    if suite == "OfxImageEffectSuite" {
+    if suite == OfxImageEffectSuite {
         assert!(version == 1);
         &suite_impls::IMAGE_EFFECT_SUITE as *const _ as *const c_void
-    } else if suite == "OfxPropertySuite" {
+    } else if suite == OfxPropertySuite {
         assert!(version == 1);
         &suite_impls::PROPERTY_SUITE as *const _ as *const c_void
-    } else if suite == "OfxParameterSuite" {
+    } else if suite == OfxParameterSuite {
         assert!(version == 1);
         &suite_impls::PARAMETER_SUITE as *const _ as *const c_void
-    } else if suite == "OfxMemorySuite" {
+    } else if suite == OfxMemorySuite {
         assert!(version == 1);
         &suite_impls::MEMORY_SUITE as *const _ as *const c_void
-    } else if suite == "OfxMultiThreadSuite" {
+    } else if suite == OfxMultiThreadSuite {
         assert!(version == 1);
         &suite_impls::MULTI_THREAD_SUITE as *const _ as *const c_void
-    } else if suite == "OfxMessageSuite" {
+    } else if suite == OfxMessageSuite {
         assert!(version == 1);
         &suite_impls::MESSAGE_SUITE as *const _ as *const c_void
     } else {
@@ -339,7 +346,7 @@ fn process_bundle(host: &OfxHost, bundle: &Bundle) -> Result<(), Box<dyn Error>>
         println!(
             " load: {:?}",
             p.call_action(
-                "OfxActionLoad",
+                OfxActionLoad,
                 std::ptr::null(),
                 OfxPropertySetHandle::from(std::ptr::null_mut()),
                 OfxPropertySetHandle::from(std::ptr::null_mut()),
@@ -349,7 +356,7 @@ fn process_bundle(host: &OfxHost, bundle: &Bundle) -> Result<(), Box<dyn Error>>
         println!(
             " describe: {:?}",
             p.call_action(
-                "OfxActionDescribe",
+                OfxActionDescribe,
                 std::ptr::addr_of!(effect) as *const c_void,
                 OfxPropertySetHandle::from(std::ptr::null_mut()),
                 OfxPropertySetHandle::from(std::ptr::null_mut()),
@@ -359,7 +366,7 @@ fn process_bundle(host: &OfxHost, bundle: &Bundle) -> Result<(), Box<dyn Error>>
         println!(
             " unload: {:?}",
             p.call_action(
-                "OfxActionUnload",
+                OfxActionUnload,
                 std::ptr::null(),
                 OfxPropertySetHandle::from(std::ptr::null_mut()),
                 OfxPropertySetHandle::from(std::ptr::null_mut()),
@@ -379,48 +386,48 @@ fn main() {
         .map(|s| s.parse::<c_int>().unwrap())
         .collect();
     let mut host_props = PropertySet::from([
-        ("OfxPropName", "openfx-driver".into()),
-        ("OfxPropLabel", "OpenFX Driver".into()),
-        ("OfxPropVersion", version.into()),
-        ("OfxPropVersionLabel", VERSION_NAME.into()),
-        ("OfxPropAPIVersion", [1, 4].into()),
-        ("OfxImageEffectHostPropIsBackground", false.into()),
-        ("OfxImageEffectPropSupportsOverlays", false.into()),
-        ("OfxImageEffectPropSupportsMultiResolution", false.into()),
-        ("OfxImageEffectPropSupportsTiles", false.into()),
-        ("OfxImageEffectPropTemporalClipAccess", false.into()),
-        ("OfxImageEffectPropMultipleClipDepths", false.into()),
-        ("OfxImageEffectPropSupportsMultipleClipPARs", false.into()),
-        ("OfxImageEffectPropSetableFrameRate", false.into()),
-        ("OfxImageEffectPropSetableFielding", false.into()),
-        ("OfxImageEffectInstancePropSequentialRender", false.into()),
-        ("OfxParamHostPropSupportsStringAnimation", false.into()),
-        ("OfxParamHostPropSupportsCustomInteract", false.into()),
-        ("OfxParamHostPropSupportsChoiceAnimation", false.into()),
-        ("OfxParamHostPropSupportsStrChoiceAnimation", false.into()),
-        ("OfxParamHostPropSupportsBooleanAnimation", false.into()),
-        ("OfxParamHostPropSupportsCustomAnimation", false.into()),
-        ("OfxParamHostPropSupportsParametricAnimation", false.into()),
+        (OfxPropName, "openfx-driver".into()),
+        (OfxPropLabel, "OpenFX Driver".into()),
+        (OfxPropVersion, version.into()),
+        (OfxPropVersionLabel, VERSION_NAME.into()),
+        (OfxPropAPIVersion, [1, 4].into()),
+        (OfxImageEffectHostPropIsBackground, false.into()),
+        (OfxImageEffectPropSupportsOverlays, false.into()),
+        (OfxImageEffectPropSupportsMultiResolution, false.into()),
+        (OfxImageEffectPropSupportsTiles, false.into()),
+        (OfxImageEffectPropTemporalClipAccess, false.into()),
+        (OfxImageEffectPropSupportsMultipleClipDepths, false.into()),
+        (OfxImageEffectPropSupportsMultipleClipPARs, false.into()),
+        (OfxImageEffectPropSetableFrameRate, false.into()),
+        (OfxImageEffectPropSetableFielding, false.into()),
+        (OfxImageEffectInstancePropSequentialRender, false.into()),
+        (OfxParamHostPropSupportsStringAnimation, false.into()),
+        (OfxParamHostPropSupportsCustomInteract, false.into()),
+        (OfxParamHostPropSupportsChoiceAnimation, false.into()),
+        (OfxParamHostPropSupportsStrChoiceAnimation, false.into()),
+        (OfxParamHostPropSupportsBooleanAnimation, false.into()),
+        (OfxParamHostPropSupportsCustomAnimation, false.into()),
+        (OfxParamHostPropSupportsParametricAnimation, false.into()),
         // Resolve GPU extensions weirdly use "false"/"true" strings
-        ("OfxImageEffectPropOpenCLRenderSupported", "false".into()),
-        ("OfxImageEffectPropCudaRenderSupported", "false".into()),
-        ("OfxImageEffectPropCudaStreamSupported", "false".into()),
-        ("OfxImageEffectPropMetalRenderSupported", "false".into()),
-        ("OfxImageEffectPropRenderQualityDraft", false.into()),
-        ("OfxParamHostPropMaxParameters", (-1).into()),
-        ("OfxParamHostPropMaxPages", 0.into()),
-        ("OfxParamHostPropPageRowColumnCount", [0, 0].into()),
+        (OfxImageEffectPropOpenCLRenderSupported, "false".into()),
+        (OfxImageEffectPropCudaRenderSupported, "false".into()),
+        (OfxImageEffectPropCudaStreamSupported, "false".into()),
+        (OfxImageEffectPropMetalRenderSupported, "false".into()),
+        (OfxImageEffectPropRenderQualityDraft, false.into()),
+        (OfxParamHostPropMaxParameters, (-1).into()),
+        (OfxParamHostPropMaxPages, 0.into()),
+        (OfxParamHostPropPageRowColumnCount, [0, 0].into()),
         (
-            "OfxImageEffectPropSupportedComponents",
-            "OfxImageComponentRGBA".into(),
+            OfxImageEffectPropSupportedComponents,
+            OfxImageComponentRGBA.into(),
         ),
         (
-            "OfxImageEffectPropSupportedContexts",
-            "OfxImageEffectContextFilter".into(),
+            OfxImageEffectPropSupportedContexts,
+            OfxImageEffectContextFilter.into(),
         ),
         (
-            "OfxImageEffectPropSupportedPixelDepths",
-            "OfxBitDepthFloat".into(),
+            OfxImageEffectPropSupportedPixelDepths,
+            OfxBitDepthFloat.into(),
         ),
     ]);
     let host = OfxHost {
