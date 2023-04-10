@@ -48,6 +48,9 @@ pub enum OfxStatus {
     ReplyYes = 12,
     ReplyNo = 13,
     ReplyDefault = 14,
+    ErrImageFormat = 1000,
+    GLOutOfMemory = 1001,
+    GLRenderFailed = 1002,
 }
 
 pub type OfxTime = c_double;
