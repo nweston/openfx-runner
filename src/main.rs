@@ -113,10 +113,16 @@ impl Plugin {
     }
 }
 
+/// An opaque memory address. Used for pointer properties which are
+/// never dereferenced by the host, but only pass back to the plugin.
+#[derive(Debug, PartialEq)]
+struct Addr(*const c_void);
+unsafe impl Send for Addr {}
+
 #[derive(Debug)]
 #[allow(dead_code)]
 enum PropertyValue {
-    Pointer(*mut c_void),
+    Pointer(Addr),
     String(CString),
     Double(f64),
     Int(c_int),
@@ -157,7 +163,7 @@ impl From<f64> for PropertyValue {
 
 impl From<*mut c_void> for PropertyValue {
     fn from(i: *mut c_void) -> Self {
-        PropertyValue::Pointer(i)
+        PropertyValue::Pointer(Addr(i))
     }
 }
 

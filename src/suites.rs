@@ -110,7 +110,7 @@ pub struct OfxPropertySuiteV1 {
         properties: OfxPropertySetHandle,
         property: *const c_char,
         index: c_int,
-        value: *mut *mut c_void,
+        value: *mut *const c_void,
     ) -> OfxStatus,
     pub propGetString: extern "C" fn(
         properties: OfxPropertySetHandle,
@@ -134,7 +134,7 @@ pub struct OfxPropertySuiteV1 {
         properties: OfxPropertySetHandle,
         property: *const c_char,
         count: c_int,
-        value: *mut *mut c_void,
+        value: *mut *const c_void,
     ) -> OfxStatus,
     pub propGetStringN: extern "C" fn(
         properties: OfxPropertySetHandle,

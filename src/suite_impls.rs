@@ -1,7 +1,7 @@
 use crate::cstr_to_string;
 use crate::suites::*;
 use crate::types::*;
-use crate::{Handle, PropertyValue};
+use crate::{Addr, Handle, PropertyValue};
 use std::ffi::{c_char, c_double, c_int, c_uint, c_void, CStr};
 
 // ========= ImageEffectSuite =========
@@ -243,14 +243,14 @@ extern "C" fn propGetPointer(
     properties: OfxPropertySetHandle,
     property: *const c_char,
     index: c_int,
-    value: *mut *mut c_void,
+    value: *mut *const c_void,
 ) -> OfxStatus {
     let key = unsafe { cstr_to_string(property) };
     let props = properties.as_ref();
     if let Some(values) = props.0.get(&key) {
         if let Some(v) = values.0.get(index as usize) {
             match v {
-                PropertyValue::Pointer(p) => unsafe {
+                PropertyValue::Pointer(Addr(p)) => unsafe {
                     *value = *p;
                     OfxStatus::OK
                 },
@@ -364,7 +364,7 @@ extern "C" fn propGetPointerN(
     properties: OfxPropertySetHandle,
     property: *const c_char,
     count: c_int,
-    value: *mut *mut c_void,
+    value: *mut *const c_void,
 ) -> OfxStatus {
     panic!("Not implemented!");
 }
