@@ -1,8 +1,11 @@
+use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::error::Error;
 use std::ffi::{c_char, c_int, c_void, CStr, CString};
 use std::fs;
 use std::string::String;
+use std::sync::Mutex;
+use std::sync::{Arc, Weak};
 
 pub mod constants;
 use constants::actions::*;
@@ -17,31 +20,114 @@ mod suites;
 mod types;
 use types::*;
 
-trait Handle {
-    type Object;
+// ========= Handles =========
 
-    fn as_ref(self) -> &'static mut Self::Object
-    where
-        Self: Sized + Into<*mut c_void>,
-    {
-        let ptr: *mut c_void = self.into();
-        unsafe { &mut *(ptr as *mut Self::Object) }
+/// Keep track of valid handles for a single type.
+///
+/// Handles are defined in the OFX API as void pointers to opaque
+/// objects controlled by the host. Plugins can only access the
+/// contents through API functions.
+///
+/// Here, objects which can be referred to by a handle are stored in
+/// an Arc<Mutex<T>>. A handle stores the address of the object (which
+/// won't move because it's boxed by the Arc). However, to preserve
+/// safety, handles are never actually dereferenced. Instead, the
+/// HandleManager maintains of map of handles, and Weak pointers to
+/// the underlying object. This has several benefits:
+///  - Avoids unsafe code
+///  - Invalid handles are detected because they don't exist in the map
+///  - Handles to dead objects are detected by the Weak pointer
+struct HandleManager<T, H> {
+    handle_to_ptr: HashMap<H, Weak<Mutex<T>>>,
+}
+
+impl<T, H> HandleManager<T, H>
+where
+    H: From<*mut c_void> + Eq + std::hash::Hash + Copy,
+{
+    fn new() -> Self {
+        HandleManager {
+            handle_to_ptr: HashMap::new(),
+        }
+    }
+
+    /// Create a handle for an object.
+    fn get_handle(&mut self, obj: Arc<Mutex<T>>) -> H {
+        let handle: H = (Arc::as_ptr(&obj) as *mut c_void).into();
+        self.handle_to_ptr.insert(handle, Arc::downgrade(&obj));
+        handle
     }
 }
 
+/// A trait for handles to OFX objects.
+///
+/// Provides methods to access the underlying objects referred to by a
+/// handle.
+trait Handle: Sized + Eq + std::hash::Hash + std::fmt::Debug + 'static {
+    type Object;
+    fn handle_manager() -> &'static Lazy<Mutex<HandleManager<Self::Object, Self>>>;
+
+    /// Get the underlying object of a handle.
+    ///
+    /// Panics if the handle is invalid or points to a deallocated
+    /// object (these are errors in the plugin and if they occur we
+    /// can't reasonably recover, so it's best to fail immediately
+    /// with the option of backtrace).
+    fn as_arc(self) -> Arc<Mutex<Self::Object>> {
+        if let Some(weak) = Self::handle_manager()
+            .lock()
+            .unwrap()
+            .handle_to_ptr
+            .get(&self)
+        {
+            weak.upgrade().unwrap_or_else(|| {
+                panic!(
+                    "OfxPropertySetHandle {:?} points to deallocated object",
+                    self
+                )
+            })
+        } else {
+            panic!("Bad OfxPropertySetHandle {:?}", self);
+        }
+    }
+
+    /// Run a function on the underlying object.
+    ///
+    /// This uses as_arc() and can panic under the same conditions.
+    fn with_object<F, T>(self, callback: F) -> T
+    where
+        F: FnOnce(&mut Self::Object) -> T,
+    {
+        let mutex = self.as_arc();
+        let guard = &mut mutex.lock().unwrap();
+        callback(guard)
+    }
+}
+
+/// Implement Handle and From traits for a handle. Provides convenient
+/// conversion between handles and corresponding objects.
 macro_rules! impl_handle {
     ($handle_name: ident, $object_name: ident) => {
         impl Handle for $handle_name {
             type Object = $object_name;
+            fn handle_manager() -> &'static Lazy<Mutex<HandleManager<Self::Object, Self>>>
+            {
+                static MANAGER: Lazy<Mutex<HandleManager<$object_name, $handle_name>>> =
+                    Lazy::new(|| Mutex::new(HandleManager::new()));
+                &MANAGER
+            }
         }
-        impl From<&mut $object_name> for $handle_name {
-            fn from(obj: &mut $object_name) -> Self {
-                Self::from(obj as *mut $object_name as *mut c_void)
+
+        impl From<Arc<Mutex<$object_name>>> for $handle_name {
+            fn from(obj: Arc<Mutex<$object_name>>) -> Self {
+                $handle_name::handle_manager()
+                    .lock()
+                    .unwrap()
+                    .get_handle(obj)
             }
         }
     };
 }
-
 impl_handle!(OfxImageEffectHandle, ImageEffect);
 impl_handle!(OfxParamSetHandle, ParamSet);
 impl_handle!(OfxPropertySetHandle, PropertySet);
@@ -128,41 +214,40 @@ impl ParamType {
 struct ParamDefinition {
     name: String,
     kind: ParamType,
-    properties: PropertySet,
+    properties: Arc<Mutex<PropertySet>>,
 }
 
 #[derive(Default, Debug)]
 struct ParamSet {
-    properties: PropertySet,
-    params: HashMap<String, Box<ParamDefinition>>,
+    properties: Arc<Mutex<PropertySet>>,
+    params: HashMap<String, Arc<Mutex<ParamDefinition>>>,
 }
 
 impl ParamSet {
-    fn create_param(&mut self, kind: &str, name: &str) -> &mut ParamDefinition {
+    fn create_param(&mut self, kind: &str, name: &str) -> Arc<Mutex<ParamDefinition>> {
         self.params.insert(
             name.into(),
-            Box::new(ParamDefinition {
+            Arc::new(Mutex::new(ParamDefinition {
                 name: name.into(),
                 kind: ParamType::from_name(kind),
                 properties: Default::default(),
-            }),
+            })),
         );
-        self.params.get_mut(name).unwrap()
+        self.params.get_mut(name).unwrap().clone()
     }
 }
 
 #[derive(Default, Debug)]
 pub struct ImageEffect {
-    properties: PropertySet,
-    params: ParamSet,
-    // FIXME: do something more robust wi/ handles
-    clips: HashMap<String, Box<PropertySet>>,
+    properties: Arc<Mutex<PropertySet>>,
+    param_set: Arc<Mutex<ParamSet>>,
+    clips: HashMap<String, Arc<Mutex<PropertySet>>>,
 }
 
 impl ImageEffect {
-    fn create_clip(&mut self, name: &str) -> &mut PropertySet {
+    fn create_clip(&mut self, name: &str) -> Arc<Mutex<PropertySet>> {
         self.clips.insert(name.into(), Default::default());
-        self.clips.get_mut(name).unwrap()
+        self.clips.get(name).unwrap().clone()
     }
 }
 
@@ -187,12 +272,13 @@ impl Plugin {
     fn call_action(
         &self,
         action: &str,
-        handle: *const c_void,
+        handle: OfxImageEffectHandle,
         in_args: OfxPropertySetHandle,
         out_args: OfxPropertySetHandle,
     ) -> OfxStatus {
+        let handle_ptr: *mut c_void = handle.into();
         let c_action = CString::new(action).unwrap();
-        (self.main_entry)(c_action.as_ptr(), handle, in_args, out_args)
+        (self.main_entry)(c_action.as_ptr(), handle_ptr, in_args, out_args)
     }
 }
 
@@ -436,47 +522,55 @@ fn process_bundle(host: &OfxHost, bundle: &Bundle) -> Result<(), Box<dyn Error>>
             " load: {:?}",
             p.call_action(
                 OfxActionLoad,
-                std::ptr::null(),
+                OfxImageEffectHandle::from(std::ptr::null_mut()),
                 OfxPropertySetHandle::from(std::ptr::null_mut()),
                 OfxPropertySetHandle::from(std::ptr::null_mut()),
             )
         );
-        let effect: ImageEffect = Default::default();
+        let effect: Arc<Mutex<ImageEffect>> = Default::default();
         println!(
             " describe: {:?}",
             p.call_action(
                 OfxActionDescribe,
-                std::ptr::addr_of!(effect) as *const c_void,
+                effect.clone().into(),
                 OfxPropertySetHandle::from(std::ptr::null_mut()),
                 OfxPropertySetHandle::from(std::ptr::null_mut()),
             )
         );
 
         assert!(effect
+            .lock()
+            .unwrap()
             .properties
+            .lock()
+            .unwrap()
             .0
             .get(OfxImageEffectPropSupportedContexts)
             .map(|p| p.0.contains(&OfxImageEffectContextFilter.into()))
             .unwrap_or(false));
         assert!(effect
+            .lock()
+            .unwrap()
             .properties
+            .lock()
+            .unwrap()
             .0
             .get(OfxImageEffectPropSupportedPixelDepths)
             .map(|p| p.0.contains(&OfxBitDepthFloat.into()))
             .unwrap_or(false));
 
-        let filter: ImageEffect = Default::default();
-        let mut filter_inargs = PropertySet::from([(
+        let filter: Arc<Mutex<ImageEffect>> = Default::default();
+        let filter_inargs = Arc::new(Mutex::new(PropertySet::from([(
             OfxImageEffectPropContext,
             OfxImageEffectContextFilter.into(),
-        )]);
+        )])));
 
         println!(
             " describe filter: {:?}",
             p.call_action(
                 OfxImageEffectActionDescribeInContext,
-                std::ptr::addr_of!(filter) as *const c_void,
-                OfxPropertySetHandle::from(&mut filter_inargs),
+                filter.clone().into(),
+                OfxPropertySetHandle::from(filter_inargs.clone()),
                 OfxPropertySetHandle::from(std::ptr::null_mut()),
             )
         );
@@ -485,7 +579,7 @@ fn process_bundle(host: &OfxHost, bundle: &Bundle) -> Result<(), Box<dyn Error>>
             " unload: {:?}",
             p.call_action(
                 OfxActionUnload,
-                std::ptr::null(),
+                OfxImageEffectHandle::from(std::ptr::null_mut()),
                 OfxPropertySetHandle::from(std::ptr::null_mut()),
                 OfxPropertySetHandle::from(std::ptr::null_mut()),
             )
@@ -504,7 +598,7 @@ fn main() {
         .split('.')
         .map(|s| s.parse::<c_int>().unwrap())
         .collect();
-    let mut host_props = PropertySet::from([
+    let host_props = Arc::new(Mutex::new(PropertySet::from([
         (OfxPropName, "openfx-driver".into()),
         (OfxPropLabel, "OpenFX Driver".into()),
         (OfxPropVersion, version.into()),
@@ -548,9 +642,9 @@ fn main() {
             OfxImageEffectPropSupportedPixelDepths,
             OfxBitDepthFloat.into(),
         ),
-    ]);
+    ])));
     let host = OfxHost {
-        host: (&mut host_props).into(),
+        host: host_props.clone().into(),
         fetchSuite: fetch_suite,
     };
 
