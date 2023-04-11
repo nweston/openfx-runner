@@ -560,6 +560,10 @@ fn process_bundle(host: &OfxHost, bundle: &Bundle) -> Result<(), Box<dyn Error>>
             .unwrap_or(false));
 
         let filter: Arc<Mutex<ImageEffect>> = Default::default();
+        *filter.lock().unwrap().properties.lock().unwrap() = PropertySet::from([(
+            OfxPluginPropFilePath,
+            bundle.path.to_str().unwrap().into(),
+        )]);
         let filter_inargs = Arc::new(Mutex::new(PropertySet::from([(
             OfxImageEffectPropContext,
             OfxImageEffectContextFilter.into(),
