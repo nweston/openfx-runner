@@ -4,8 +4,7 @@ use std::error::Error;
 use std::ffi::{c_char, c_int, c_void, CStr, CString};
 use std::fs;
 use std::string::String;
-use std::sync::Mutex;
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, Mutex, MutexGuard, Weak};
 
 pub mod constants;
 use constants::actions::*;
@@ -20,6 +19,43 @@ mod suites;
 mod types;
 use types::*;
 
+/// Holder for objects which can cross the API boundary.
+///
+/// Essentially an Arc<Mutex<T>> with some convenience
+/// features.
+#[derive(Default)]
+struct Object<T>(Arc<Mutex<T>>);
+
+impl<T> Object<T> {
+    fn get(&self) -> MutexGuard<'_, T> {
+        // Locking should never fail since the app is single-threaded
+        // for now, so just unwrap.
+        self.0.lock().unwrap()
+    }
+}
+
+impl<T> Clone for Object<T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+impl<T: std::fmt::Debug> std::fmt::Debug for Object<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Ok(v) = self.0.try_lock() {
+            write!(f, "{:?}", v)
+        } else {
+            write!(f, "Object([locked]{:?})", self.0)
+        }
+    }
+}
+
+trait IntoObject: Sized {
+    fn into_object(self) -> Object<Self> {
+        Object(Arc::new(Mutex::new(self)))
+    }
+}
+
 // ========= Handles =========
 
 /// Keep track of valid handles for a single type.
@@ -29,14 +65,14 @@ use types::*;
 /// contents through API functions.
 ///
 /// Here, objects which can be referred to by a handle are stored in
-/// an Arc<Mutex<T>>. A handle stores the address of the object (which
-/// won't move because it's boxed by the Arc). However, to preserve
-/// safety, handles are never actually dereferenced. Instead, the
-/// HandleManager maintains of map of handles, and Weak pointers to
-/// the underlying object. This has several benefits:
-///  - Avoids unsafe code
-///  - Invalid handles are detected because they don't exist in the map
-///  - Handles to dead objects are detected by the Weak pointer
+/// an Object<T>. A handle stores the address of the underlying object
+/// (which won't move because it's boxed by the Object
+/// wrapper). However, to preserve safety, handles are never actually
+/// dereferenced. Instead, the HandleManager maintains of map of
+/// handles, and Weak pointers to the underlying object. This has
+/// several benefits: - Avoids unsafe code - Invalid handles are
+/// detected because they don't exist in the map - Handles to dead
+/// objects are detected by the Weak pointer
 struct HandleManager<T, H> {
     handle_to_ptr: HashMap<H, Weak<Mutex<T>>>,
 }
@@ -52,9 +88,9 @@ where
     }
 
     /// Create a handle for an object.
-    fn get_handle(&mut self, obj: Arc<Mutex<T>>) -> H {
-        let handle: H = (Arc::as_ptr(&obj) as *mut c_void).into();
-        self.handle_to_ptr.insert(handle, Arc::downgrade(&obj));
+    fn get_handle(&mut self, obj: Object<T>) -> H {
+        let handle: H = (Arc::as_ptr(&obj.0) as *mut c_void).into();
+        self.handle_to_ptr.insert(handle, Arc::downgrade(&obj.0));
         handle
     }
 }
@@ -73,19 +109,19 @@ trait Handle: Sized + Eq + std::hash::Hash + std::fmt::Debug + 'static {
     /// object (these are errors in the plugin and if they occur we
     /// can't reasonably recover, so it's best to fail immediately
     /// with the option of backtrace).
-    fn as_arc(self) -> Arc<Mutex<Self::Object>> {
+    fn as_arc(self) -> Object<Self::Object> {
         if let Some(weak) = Self::handle_manager()
             .lock()
             .unwrap()
             .handle_to_ptr
             .get(&self)
         {
-            weak.upgrade().unwrap_or_else(|| {
+            Object(weak.upgrade().unwrap_or_else(|| {
                 panic!(
                     "OfxPropertySetHandle {:?} points to deallocated object",
                     self
                 )
-            })
+            }))
         } else {
             panic!("Bad OfxPropertySetHandle {:?}", self);
         }
@@ -99,7 +135,7 @@ trait Handle: Sized + Eq + std::hash::Hash + std::fmt::Debug + 'static {
         F: FnOnce(&mut Self::Object) -> T,
     {
         let mutex = self.as_arc();
-        let guard = &mut mutex.lock().unwrap();
+        let guard = &mut mutex.get();
         callback(guard)
     }
 }
@@ -118,8 +154,8 @@ macro_rules! impl_handle {
             }
         }
 
-        impl From<Arc<Mutex<$object_name>>> for $handle_name {
-            fn from(obj: Arc<Mutex<$object_name>>) -> Self {
+        impl From<Object<$object_name>> for $handle_name {
+            fn from(obj: Object<$object_name>) -> Self {
                 $handle_name::handle_manager()
                     .lock()
                     .unwrap()
@@ -209,33 +245,16 @@ impl ParamType {
 }
 
 // Static properties of a parameter
+#[derive(Debug)]
+#[allow(dead_code)]
 struct ParamDefinition {
     kind: ParamType,
-    properties: Arc<Mutex<PropertySet>>,
-}
-
-fn format_mutex<T: std::fmt::Debug>(
-    m: &Mutex<T>,
-    f: &mut std::fmt::Formatter<'_>,
-) -> std::fmt::Result {
-    if let Ok(v) = m.try_lock() {
-        write!(f, "{:?}", v)
-    } else {
-        write!(f, "{:?}", m)
-    }
-}
-
-impl std::fmt::Debug for ParamDefinition {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "ParamDefinition {{ kind: {:?}, properties: ", self.kind,)
-            .and_then(|_| format_mutex(&*self.properties, f))
-            .and_then(|_| write!(f, " }}"))
-    }
+    properties: Object<PropertySet>,
 }
 
 #[derive(Debug)]
 struct ParamSet {
-    properties: Arc<Mutex<PropertySet>>,
+    properties: Object<PropertySet>,
     params: HashMap<String, ParamDefinition>,
 }
 
@@ -245,10 +264,11 @@ impl ParamSet {
             name.into(),
             ParamDefinition {
                 kind: ParamType::from_name(kind),
-                properties: Arc::new(Mutex::new(PropertySet {
+                properties: PropertySet {
                     name: "param_".to_string() + name,
                     ..Default::default()
-                })),
+                }
+                .into_object(),
             },
         );
         self.params.get_mut(name).unwrap().properties.clone().into()
@@ -258,7 +278,7 @@ impl ParamSet {
 impl Default for ParamSet {
     fn default() -> Self {
         Self {
-            properties: PropertySet::new_arc("paramSet"),
+            properties: PropertySet::new("paramSet", []).into_object(),
             params: Default::default(),
         }
     }
@@ -266,13 +286,13 @@ impl Default for ParamSet {
 
 #[derive(Debug)]
 pub struct ImageEffect {
-    properties: Arc<Mutex<PropertySet>>,
-    param_set: Arc<Mutex<ParamSet>>,
-    clips: HashMap<String, Arc<Mutex<PropertySet>>>,
+    properties: Object<PropertySet>,
+    param_set: Object<ParamSet>,
+    clips: HashMap<String, Object<PropertySet>>,
 }
 
 impl ImageEffect {
-    fn create_clip(&mut self, name: &str) -> Arc<Mutex<PropertySet>> {
+    fn create_clip(&mut self, name: &str) -> Object<PropertySet> {
         self.clips.insert(name.into(), Default::default());
         self.clips.get(name).unwrap().clone()
     }
@@ -281,12 +301,14 @@ impl ImageEffect {
 impl Default for ImageEffect {
     fn default() -> Self {
         Self {
-            properties: PropertySet::new_arc("ImageEffect"),
+            properties: PropertySet::new("ImageEffect", []).into_object(),
             param_set: Default::default(),
             clips: Default::default(),
         }
     }
 }
+
+impl IntoObject for ImageEffect {}
 
 #[derive(Debug)]
 #[allow(dead_code)]
@@ -384,14 +406,8 @@ impl From<*mut c_void> for PropertyValue {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 struct Property(Vec<PropertyValue>);
-
-impl std::fmt::Debug for Property {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.0)
-    }
-}
 
 // Make a PropertyValue from a single value
 impl<A: Into<PropertyValue>> From<A> for Property {
@@ -437,13 +453,6 @@ impl PropertySet {
         }
     }
 
-    fn new_arc(name: &str) -> Arc<Mutex<Self>> {
-        Arc::new(Mutex::new(Self {
-            name: name.to_string(),
-            values: Default::default(),
-        }))
-    }
-
     fn get(&self, key: &str, index: usize) -> Result<&PropertyValue, OfxStatus> {
         self.values
             .get(key)
@@ -466,6 +475,8 @@ impl PropertySet {
         prop.0[uindex] = value;
     }
 }
+
+impl IntoObject for PropertySet {}
 
 fn plist_path(bundle_path: &std::path::Path) -> std::path::PathBuf {
     bundle_path.join("Contents/Info.plist")
@@ -617,7 +628,7 @@ fn process_bundle(host: &OfxHost, bundle: &Bundle) -> Result<(), Box<dyn Error>>
         );
 
         // Overall descriptor for the plugin
-        let effect: Arc<Mutex<ImageEffect>> = Default::default();
+        let effect: Object<ImageEffect> = Default::default();
         println!(
             " describe: {:?}",
             p.call_action(
@@ -629,39 +640,41 @@ fn process_bundle(host: &OfxHost, bundle: &Bundle) -> Result<(), Box<dyn Error>>
         );
 
         assert!(effect
-            .lock()
-            .unwrap()
+            .get()
             .properties
-            .lock()
-            .unwrap()
+            .get()
             .values
             .get(OfxImageEffectPropSupportedContexts)
             .map(|p| p.0.contains(&OfxImageEffectContextFilter.into()))
             .unwrap_or(false));
         assert!(effect
-            .lock()
-            .unwrap()
+            .get()
             .properties
-            .lock()
-            .unwrap()
+            .get()
             .values
             .get(OfxImageEffectPropSupportedPixelDepths)
             .map(|p| p.0.contains(&OfxBitDepthFloat.into()))
             .unwrap_or(false));
 
         // Descriptor for the plugin in Filter context
-        let filter: Arc<Mutex<ImageEffect>> = Default::default();
-        *filter.lock().unwrap().properties.lock().unwrap() = PropertySet::new(
-            "filter",
-            [(OfxPluginPropFilePath, bundle.path.to_str().unwrap().into())],
-        );
-        let filter_inargs = Arc::new(Mutex::new(PropertySet::new(
+        let filter = ImageEffect {
+            properties: PropertySet::new(
+                "filter",
+                [(OfxPluginPropFilePath, bundle.path.to_str().unwrap().into())],
+            )
+            .into_object(),
+            ..Default::default()
+        }
+        .into_object();
+
+        let filter_inargs = PropertySet::new(
             "filter_inargs",
             [(
                 OfxImageEffectPropContext,
                 OfxImageEffectContextFilter.into(),
             )],
-        )));
+        )
+        .into_object();
 
         println!(
             " describe filter: {:?}",
@@ -675,7 +688,7 @@ fn process_bundle(host: &OfxHost, bundle: &Bundle) -> Result<(), Box<dyn Error>>
 
         // Instance of the filter. Both instances and descriptors are
         // ImageEffect objects.
-        let filter_instance: Arc<Mutex<ImageEffect>> = Default::default();
+        let filter_instance: Object<ImageEffect> = Default::default();
         println!(
             " create instance: {:?}",
             p.call_action(
@@ -720,7 +733,7 @@ fn main() {
         .split('.')
         .map(|s| s.parse::<c_int>().unwrap())
         .collect();
-    let host_props = Arc::new(Mutex::new(PropertySet::new(
+    let host_props = PropertySet::new(
         "host",
         [
             (OfxPropName, "openfx-driver".into()),
@@ -767,7 +780,8 @@ fn main() {
                 OfxBitDepthFloat.into(),
             ),
         ],
-    )));
+    )
+    .into_object();
     let host = OfxHost {
         host: host_props.clone().into(),
         fetchSuite: fetch_suite,
