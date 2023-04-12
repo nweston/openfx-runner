@@ -615,6 +615,8 @@ fn process_bundle(host: &OfxHost, bundle: &Bundle) -> Result<(), Box<dyn Error>>
                 OfxPropertySetHandle::from(std::ptr::null_mut()),
             )
         );
+
+        // Overall descriptor for the plugin
         let effect: Arc<Mutex<ImageEffect>> = Default::default();
         println!(
             " describe: {:?}",
@@ -647,6 +649,7 @@ fn process_bundle(host: &OfxHost, bundle: &Bundle) -> Result<(), Box<dyn Error>>
             .map(|p| p.0.contains(&OfxBitDepthFloat.into()))
             .unwrap_or(false));
 
+        // Descriptor for the plugin in Filter context
         let filter: Arc<Mutex<ImageEffect>> = Default::default();
         *filter.lock().unwrap().properties.lock().unwrap() = PropertySet::new(
             "filter",
@@ -670,6 +673,19 @@ fn process_bundle(host: &OfxHost, bundle: &Bundle) -> Result<(), Box<dyn Error>>
             )
         );
 
+        // Instance of the filter. Both instances and descriptors are
+        // ImageEffect objects.
+        let filter_instance: Arc<Mutex<ImageEffect>> = Default::default();
+        println!(
+            " create instance: {:?}",
+            p.call_action(
+                OfxActionCreateInstance,
+                filter_instance.clone().into(),
+                OfxPropertySetHandle::from(std::ptr::null_mut()),
+                OfxPropertySetHandle::from(std::ptr::null_mut()),
+            )
+        );
+
         println!(
             " unload: {:?}",
             p.call_action(
@@ -682,6 +698,7 @@ fn process_bundle(host: &OfxHost, bundle: &Bundle) -> Result<(), Box<dyn Error>>
 
         println!(" effect: {:?}", effect);
         println!(" filter: {:?}", filter);
+        println!(" instance: {:?}", filter_instance);
     }
     println!();
     Ok(())
