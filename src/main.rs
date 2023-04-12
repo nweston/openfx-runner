@@ -210,7 +210,6 @@ impl ParamType {
 
 // Static properties of a parameter
 struct ParamDefinition {
-    name: String,
     kind: ParamType,
     properties: Arc<Mutex<PropertySet>>,
 }
@@ -228,17 +227,13 @@ fn format_mutex<T: std::fmt::Debug>(
 
 impl std::fmt::Debug for ParamDefinition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "ParamDefinition {{ name: {:?}, kind: {:?}, properties: ",
-            self.name, self.kind,
-        )
-        .and_then(|_| format_mutex(&*self.properties, f))
-        .and_then(|_| write!(f, " }}"))
+        write!(f, "ParamDefinition {{ kind: {:?}, properties: ", self.kind,)
+            .and_then(|_| format_mutex(&*self.properties, f))
+            .and_then(|_| write!(f, " }}"))
     }
 }
 
-#[derive(Default, Debug)]
+#[derive(Debug)]
 struct ParamSet {
     properties: Arc<Mutex<PropertySet>>,
     params: HashMap<String, ParamDefinition>,
@@ -249,16 +244,27 @@ impl ParamSet {
         self.params.insert(
             name.into(),
             ParamDefinition {
-                name: name.into(),
                 kind: ParamType::from_name(kind),
-                properties: Default::default(),
+                properties: Arc::new(Mutex::new(PropertySet {
+                    name: "param_".to_string() + name,
+                    ..Default::default()
+                })),
             },
         );
         self.params.get_mut(name).unwrap().properties.clone().into()
     }
 }
 
-#[derive(Default, Debug)]
+impl Default for ParamSet {
+    fn default() -> Self {
+        Self {
+            properties: PropertySet::new_arc("paramSet"),
+            params: Default::default(),
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct ImageEffect {
     properties: Arc<Mutex<PropertySet>>,
     param_set: Arc<Mutex<ParamSet>>,
@@ -269,6 +275,16 @@ impl ImageEffect {
     fn create_clip(&mut self, name: &str) -> Arc<Mutex<PropertySet>> {
         self.clips.insert(name.into(), Default::default());
         self.clips.get(name).unwrap().clone()
+    }
+}
+
+impl Default for ImageEffect {
+    fn default() -> Self {
+        Self {
+            properties: PropertySet::new_arc("ImageEffect"),
+            param_set: Default::default(),
+            clips: Default::default(),
+        }
     }
 }
 
@@ -404,33 +420,50 @@ where
 }
 
 #[derive(Default, Debug)]
-pub struct PropertySet(HashMap<String, Property>);
+pub struct PropertySet {
+    name: String,
+    values: HashMap<String, Property>,
+}
 
 impl PropertySet {
+    fn new<const S: usize>(name: &str, values: [(&str, Property); S]) -> Self {
+        let mut properties = HashMap::new();
+        for (name, value) in values {
+            properties.insert(name.into(), value);
+        }
+        Self {
+            name: name.to_string(),
+            values: properties,
+        }
+    }
+
+    fn new_arc(name: &str) -> Arc<Mutex<Self>> {
+        Arc::new(Mutex::new(Self {
+            name: name.to_string(),
+            values: Default::default(),
+        }))
+    }
+
     fn get(&self, key: &str, index: usize) -> Result<&PropertyValue, OfxStatus> {
-        self.0
+        self.values
             .get(key)
-            .ok_or(OfxStatus::ErrUnknown)
+            .ok_or_else(|| {
+                println!("Property {} not found on {}", key, self.name);
+                OfxStatus::ErrUnknown
+            })
             .and_then(|values| values.0.get(index).ok_or(OfxStatus::ErrBadIndex))
     }
 
     fn set(&mut self, key: &str, index: usize, value: PropertyValue) -> () {
-        let prop = self.0.entry(key.to_string()).or_insert(Default::default());
+        let prop = self
+            .values
+            .entry(key.to_string())
+            .or_insert(Default::default());
         let uindex = index as usize;
         if uindex >= prop.0.len() {
             prop.0.resize_with(uindex + 1, || PropertyValue::Unset)
         }
         prop.0[uindex] = value;
-    }
-}
-
-impl<const S: usize> From<[(&str, Property); S]> for PropertySet {
-    fn from(slice: [(&str, Property); S]) -> Self {
-        let mut map = HashMap::new();
-        for (name, value) in slice {
-            map.insert(name.into(), value);
-        }
-        Self(map)
     }
 }
 
@@ -599,7 +632,7 @@ fn process_bundle(host: &OfxHost, bundle: &Bundle) -> Result<(), Box<dyn Error>>
             .properties
             .lock()
             .unwrap()
-            .0
+            .values
             .get(OfxImageEffectPropSupportedContexts)
             .map(|p| p.0.contains(&OfxImageEffectContextFilter.into()))
             .unwrap_or(false));
@@ -609,20 +642,23 @@ fn process_bundle(host: &OfxHost, bundle: &Bundle) -> Result<(), Box<dyn Error>>
             .properties
             .lock()
             .unwrap()
-            .0
+            .values
             .get(OfxImageEffectPropSupportedPixelDepths)
             .map(|p| p.0.contains(&OfxBitDepthFloat.into()))
             .unwrap_or(false));
 
         let filter: Arc<Mutex<ImageEffect>> = Default::default();
-        *filter.lock().unwrap().properties.lock().unwrap() = PropertySet::from([(
-            OfxPluginPropFilePath,
-            bundle.path.to_str().unwrap().into(),
-        )]);
-        let filter_inargs = Arc::new(Mutex::new(PropertySet::from([(
-            OfxImageEffectPropContext,
-            OfxImageEffectContextFilter.into(),
-        )])));
+        *filter.lock().unwrap().properties.lock().unwrap() = PropertySet::new(
+            "filter",
+            [(OfxPluginPropFilePath, bundle.path.to_str().unwrap().into())],
+        );
+        let filter_inargs = Arc::new(Mutex::new(PropertySet::new(
+            "filter_inargs",
+            [(
+                OfxImageEffectPropContext,
+                OfxImageEffectContextFilter.into(),
+            )],
+        )));
 
         println!(
             " describe filter: {:?}",
@@ -657,51 +693,54 @@ fn main() {
         .split('.')
         .map(|s| s.parse::<c_int>().unwrap())
         .collect();
-    let host_props = Arc::new(Mutex::new(PropertySet::from([
-        (OfxPropName, "openfx-driver".into()),
-        (OfxPropLabel, "OpenFX Driver".into()),
-        (OfxPropVersion, version.into()),
-        (OfxPropVersionLabel, VERSION_NAME.into()),
-        (OfxPropAPIVersion, [1, 4].into()),
-        (OfxImageEffectHostPropIsBackground, false.into()),
-        (OfxImageEffectPropSupportsOverlays, false.into()),
-        (OfxImageEffectPropSupportsMultiResolution, false.into()),
-        (OfxImageEffectPropSupportsTiles, false.into()),
-        (OfxImageEffectPropTemporalClipAccess, false.into()),
-        (OfxImageEffectPropSupportsMultipleClipDepths, false.into()),
-        (OfxImageEffectPropSupportsMultipleClipPARs, false.into()),
-        (OfxImageEffectPropSetableFrameRate, false.into()),
-        (OfxImageEffectPropSetableFielding, false.into()),
-        (OfxImageEffectInstancePropSequentialRender, false.into()),
-        (OfxParamHostPropSupportsStringAnimation, false.into()),
-        (OfxParamHostPropSupportsCustomInteract, false.into()),
-        (OfxParamHostPropSupportsChoiceAnimation, false.into()),
-        (OfxParamHostPropSupportsStrChoiceAnimation, false.into()),
-        (OfxParamHostPropSupportsBooleanAnimation, false.into()),
-        (OfxParamHostPropSupportsCustomAnimation, false.into()),
-        (OfxParamHostPropSupportsParametricAnimation, false.into()),
-        // Resolve GPU extensions weirdly use "false"/"true" strings
-        (OfxImageEffectPropOpenCLRenderSupported, "false".into()),
-        (OfxImageEffectPropCudaRenderSupported, "false".into()),
-        (OfxImageEffectPropCudaStreamSupported, "false".into()),
-        (OfxImageEffectPropMetalRenderSupported, "false".into()),
-        (OfxImageEffectPropRenderQualityDraft, false.into()),
-        (OfxParamHostPropMaxParameters, (-1).into()),
-        (OfxParamHostPropMaxPages, 0.into()),
-        (OfxParamHostPropPageRowColumnCount, [0, 0].into()),
-        (
-            OfxImageEffectPropSupportedComponents,
-            OfxImageComponentRGBA.into(),
-        ),
-        (
-            OfxImageEffectPropSupportedContexts,
-            OfxImageEffectContextFilter.into(),
-        ),
-        (
-            OfxImageEffectPropSupportedPixelDepths,
-            OfxBitDepthFloat.into(),
-        ),
-    ])));
+    let host_props = Arc::new(Mutex::new(PropertySet::new(
+        "host",
+        [
+            (OfxPropName, "openfx-driver".into()),
+            (OfxPropLabel, "OpenFX Driver".into()),
+            (OfxPropVersion, version.into()),
+            (OfxPropVersionLabel, VERSION_NAME.into()),
+            (OfxPropAPIVersion, [1, 4].into()),
+            (OfxImageEffectHostPropIsBackground, false.into()),
+            (OfxImageEffectPropSupportsOverlays, false.into()),
+            (OfxImageEffectPropSupportsMultiResolution, false.into()),
+            (OfxImageEffectPropSupportsTiles, false.into()),
+            (OfxImageEffectPropTemporalClipAccess, false.into()),
+            (OfxImageEffectPropSupportsMultipleClipDepths, false.into()),
+            (OfxImageEffectPropSupportsMultipleClipPARs, false.into()),
+            (OfxImageEffectPropSetableFrameRate, false.into()),
+            (OfxImageEffectPropSetableFielding, false.into()),
+            (OfxImageEffectInstancePropSequentialRender, false.into()),
+            (OfxParamHostPropSupportsStringAnimation, false.into()),
+            (OfxParamHostPropSupportsCustomInteract, false.into()),
+            (OfxParamHostPropSupportsChoiceAnimation, false.into()),
+            (OfxParamHostPropSupportsStrChoiceAnimation, false.into()),
+            (OfxParamHostPropSupportsBooleanAnimation, false.into()),
+            (OfxParamHostPropSupportsCustomAnimation, false.into()),
+            (OfxParamHostPropSupportsParametricAnimation, false.into()),
+            // Resolve GPU extensions weirdly use "false"/"true" strings
+            (OfxImageEffectPropOpenCLRenderSupported, "false".into()),
+            (OfxImageEffectPropCudaRenderSupported, "false".into()),
+            (OfxImageEffectPropCudaStreamSupported, "false".into()),
+            (OfxImageEffectPropMetalRenderSupported, "false".into()),
+            (OfxImageEffectPropRenderQualityDraft, false.into()),
+            (OfxParamHostPropMaxParameters, (-1).into()),
+            (OfxParamHostPropMaxPages, 0.into()),
+            (OfxParamHostPropPageRowColumnCount, [0, 0].into()),
+            (
+                OfxImageEffectPropSupportedComponents,
+                OfxImageComponentRGBA.into(),
+            ),
+            (
+                OfxImageEffectPropSupportedContexts,
+                OfxImageEffectContextFilter.into(),
+            ),
+            (
+                OfxImageEffectPropSupportedPixelDepths,
+                OfxBitDepthFloat.into(),
+            ),
+        ],
+    )));
     let host = OfxHost {
         host: host_props.clone().into(),
         fetchSuite: fetch_suite,

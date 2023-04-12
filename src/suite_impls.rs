@@ -237,11 +237,14 @@ extern "C" fn propGetPointer(
                 OfxStatus::OK
             },
             PropertyValue::Unset => {
-                println!("propGetString: {} {} not set", key, index);
+                println!("propGetString: {} {} not set in {}", key, index, props.name);
                 OfxStatus::ErrUnknown
             }
             _ => {
-                println!("propGetString: {} {} unexpected type: {:?}", key, index, v);
+                println!(
+                    "propGetString: {} {} unexpected type: {:?} in {}",
+                    key, index, v, props.name
+                );
                 OfxStatus::ErrUnknown
             }
         },
@@ -263,11 +266,14 @@ extern "C" fn propGetString(
                 OfxStatus::OK
             },
             PropertyValue::Unset => {
-                println!("propGetString: {} {} not set", key, index);
+                println!("propGetString: {} {} not set in {}", key, index, props.name);
                 OfxStatus::ErrUnknown
             }
             _ => {
-                println!("propGetString: {} {} unexpected type: {:?}", key, index, v);
+                println!(
+                    "propGetString: {} {} unexpected type: {:?} in {}",
+                    key, index, v, props.name
+                );
                 OfxStatus::ErrUnknown
             }
         },
@@ -289,11 +295,14 @@ extern "C" fn propGetDouble(
                 OfxStatus::OK
             },
             PropertyValue::Unset => {
-                println!("propGetString: {} {} not set", key, index);
+                println!("propGetDouble: {} {} not set in {}", key, index, props.name);
                 OfxStatus::ErrUnknown
             }
             _ => {
-                println!("propGetString: {} {} unexpected type: {:?}", key, index, v);
+                println!(
+                    "propGetDouble: {} {} unexpected type: {:?} in {}",
+                    key, index, v, props.name
+                );
                 OfxStatus::ErrUnknown
             }
         },
@@ -315,11 +324,14 @@ extern "C" fn propGetInt(
                 OfxStatus::OK
             },
             PropertyValue::Unset => {
-                println!("propGetString: {} {} not set", key, index);
+                println!("propGetInt: {} {} not set in {}", key, index, props.name);
                 OfxStatus::ErrUnknown
             }
             _ => {
-                println!("propGetString: {} {} unexpected type: {:?}", key, index, v);
+                println!(
+                    "propGetInt: {} {} unexpected type: {:?} in {}",
+                    key, index, v, props.name
+                );
                 OfxStatus::ErrUnknown
             }
         },
@@ -382,11 +394,11 @@ extern "C" fn propGetDimension(
 ) -> OfxStatus {
     let key = cstr_to_string(property);
     properties.with_object(|props| {
-        if let Some(values) = props.0.get(&key) {
+        if let Some(values) = props.values.get(&key) {
             unsafe { *count = values.0.len() as i32 }
             OfxStatus::OK
         } else {
-            println!("propGetDimension: {} not found", key);
+            println!("propGetDimension: {} not found in {}", key, props.name);
             OfxStatus::ErrUnknown
         }
     })
