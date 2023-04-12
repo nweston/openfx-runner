@@ -687,6 +687,16 @@ fn process_bundle(host: &OfxHost, bundle: &Bundle) -> Result<(), Box<dyn Error>>
         );
 
         println!(
+            " destroy instance: {:?}",
+            p.call_action(
+                OfxActionDestroyInstance,
+                filter_instance.clone().into(),
+                OfxPropertySetHandle::from(std::ptr::null_mut()),
+                OfxPropertySetHandle::from(std::ptr::null_mut()),
+            )
+        );
+
+        println!(
             " unload: {:?}",
             p.call_action(
                 OfxActionUnload,
