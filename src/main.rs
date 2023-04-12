@@ -209,31 +209,52 @@ impl ParamType {
 }
 
 // Static properties of a parameter
-#[derive(Debug)]
-#[allow(dead_code)]
 struct ParamDefinition {
     name: String,
     kind: ParamType,
     properties: Arc<Mutex<PropertySet>>,
 }
 
+fn format_mutex<T: std::fmt::Debug>(
+    m: &Mutex<T>,
+    f: &mut std::fmt::Formatter<'_>,
+) -> std::fmt::Result {
+    if let Ok(v) = m.try_lock() {
+        write!(f, "{:?}", v)
+    } else {
+        write!(f, "{:?}", m)
+    }
+}
+
+impl std::fmt::Debug for ParamDefinition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "ParamDefinition {{ name: {:?}, kind: {:?}, properties: ",
+            self.name, self.kind,
+        )
+        .and_then(|_| format_mutex(&*self.properties, f))
+        .and_then(|_| write!(f, " }}"))
+    }
+}
+
 #[derive(Default, Debug)]
 struct ParamSet {
     properties: Arc<Mutex<PropertySet>>,
-    params: HashMap<String, Arc<Mutex<ParamDefinition>>>,
+    params: HashMap<String, ParamDefinition>,
 }
 
 impl ParamSet {
-    fn create_param(&mut self, kind: &str, name: &str) -> Arc<Mutex<ParamDefinition>> {
+    fn create_param(&mut self, kind: &str, name: &str) -> OfxPropertySetHandle {
         self.params.insert(
             name.into(),
-            Arc::new(Mutex::new(ParamDefinition {
+            ParamDefinition {
                 name: name.into(),
                 kind: ParamType::from_name(kind),
                 properties: Default::default(),
-            })),
+            },
         );
-        self.params.get_mut(name).unwrap().clone()
+        self.params.get_mut(name).unwrap().properties.clone().into()
     }
 }
 
@@ -288,13 +309,25 @@ impl Plugin {
 struct Addr(*const c_void);
 unsafe impl Send for Addr {}
 
-#[derive(Debug, PartialEq)]
+#[derive(PartialEq)]
 enum PropertyValue {
     Pointer(Addr),
     String(CString),
     Double(f64),
     Int(c_int),
     Unset,
+}
+
+impl std::fmt::Debug for PropertyValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self {
+            PropertyValue::Pointer(Addr(a)) => write!(f, "{:?}", a),
+            PropertyValue::String(s) => write!(f, "{:?}", s),
+            PropertyValue::Double(d) => write!(f, "{:?}", d),
+            PropertyValue::Int(i) => write!(f, "{:?}", i),
+            PropertyValue::Unset => write!(f, "Unset"),
+        }
+    }
 }
 
 // Basic conversions
@@ -335,8 +368,14 @@ impl From<*mut c_void> for PropertyValue {
     }
 }
 
-#[derive(Default, Debug)]
+#[derive(Default)]
 struct Property(Vec<PropertyValue>);
+
+impl std::fmt::Debug for Property {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.0)
+    }
+}
 
 // Make a PropertyValue from a single value
 impl<A: Into<PropertyValue>> From<A> for Property {

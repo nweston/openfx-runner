@@ -427,10 +427,8 @@ extern "C" fn paramDefine(
             CStr::from_ptr(name).to_str(),
         )
     } {
-        let param = paramSet.with_object(|p| p.create_param(type_str, name_str));
-        unsafe {
-            *propertySet = param.lock().unwrap().properties.clone().into();
-        }
+        let props = paramSet.with_object(|p| p.create_param(type_str, name_str));
+        unsafe { *propertySet = props }
         OfxStatus::OK
     } else {
         OfxStatus::ErrUnknown
