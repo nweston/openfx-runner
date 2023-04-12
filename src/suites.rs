@@ -1,8 +1,7 @@
+#![allow(non_snake_case)]
 use crate::types::*;
 use std::ffi::{c_char, c_double, c_int, c_uint, c_void};
 
-#[allow(non_snake_case)]
-#[allow(dead_code)]
 #[repr(C)]
 pub struct OfxImageEffectSuiteV1 {
     pub getPropertySet: extern "C" fn(
@@ -54,8 +53,6 @@ pub struct OfxImageEffectSuiteV1 {
     pub imageMemoryUnlock: extern "C" fn(memoryHandle: OfxImageMemoryHandle) -> OfxStatus,
 }
 
-#[allow(non_snake_case)]
-#[allow(dead_code)]
 #[repr(C)]
 pub struct OfxPropertySuiteV1 {
     pub propSetPointer: extern "C" fn(
@@ -165,8 +162,6 @@ pub struct OfxPropertySuiteV1 {
     ) -> OfxStatus,
 }
 
-#[allow(non_snake_case)]
-#[allow(dead_code)]
 #[repr(C)]
 pub struct OfxParameterSuiteV1 {
     pub paramDefine: extern "C" fn(
@@ -234,8 +229,6 @@ pub struct OfxParameterSuiteV1 {
     pub paramEditEnd: extern "C" fn(paramSet: OfxParamSetHandle) -> OfxStatus,
 }
 
-#[allow(non_snake_case)]
-#[allow(dead_code)]
 #[repr(C)]
 pub struct OfxMessageSuiteV1 {
     // XXX: uses varargs
@@ -247,8 +240,6 @@ pub struct OfxMessageSuiteV1 {
     ) -> OfxStatus,
 }
 
-#[allow(non_snake_case)]
-#[allow(dead_code)]
 #[repr(C)]
 pub struct OfxMemorySuiteV1 {
     pub memoryAlloc: extern "C" fn(
@@ -265,8 +256,6 @@ pub type OfxThreadFunctionV1 = extern "C" fn(
     customArg: *mut c_void,
 ) -> OfxStatus;
 
-#[allow(non_snake_case)]
-#[allow(dead_code)]
 #[repr(C)]
 pub struct OfxMultiThreadSuiteV1 {
     pub multiThread: extern "C" fn(

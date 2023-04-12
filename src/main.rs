@@ -289,7 +289,6 @@ struct Addr(*const c_void);
 unsafe impl Send for Addr {}
 
 #[derive(Debug, PartialEq)]
-#[allow(dead_code)]
 enum PropertyValue {
     Pointer(Addr),
     String(CString),
@@ -472,9 +471,8 @@ fn cstr_to_string(s: *const c_char) -> String {
     unsafe { CStr::from_ptr(s).to_str().unwrap().to_string() }
 }
 
-#[allow(unused_variables)]
 extern "C" fn fetch_suite(
-    host: OfxPropertySetHandle,
+    _host: OfxPropertySetHandle,
     name: *const c_char,
     version: c_int,
 ) -> *const c_void {

@@ -1,3 +1,4 @@
+#![allow(non_snake_case)]
 use crate::cstr_to_string;
 use crate::suites::*;
 use crate::types::*;
@@ -5,8 +6,6 @@ use crate::{Addr, Handle, PropertyValue};
 use std::ffi::{c_char, c_double, c_int, c_uint, c_void, CStr};
 
 // ========= ImageEffectSuite =========
-#[allow(non_snake_case)]
-#[allow(unused_variables)]
 extern "C" fn getPropertySet(
     imageEffect: OfxImageEffectHandle,
     propHandle: *mut OfxPropertySetHandle,
@@ -17,8 +16,6 @@ extern "C" fn getPropertySet(
     OfxStatus::OK
 }
 
-#[allow(non_snake_case)]
-#[allow(unused_variables)]
 extern "C" fn getParamSet(
     imageEffect: OfxImageEffectHandle,
     paramSet: *mut OfxParamSetHandle,
@@ -28,8 +25,7 @@ extern "C" fn getParamSet(
     };
     OfxStatus::OK
 }
-#[allow(non_snake_case)]
-#[allow(unused_variables)]
+
 extern "C" fn clipDefine(
     imageEffect: OfxImageEffectHandle,
     name: *const c_char,
@@ -45,7 +41,7 @@ extern "C" fn clipDefine(
         OfxStatus::ErrUnknown
     }
 }
-#[allow(non_snake_case)]
+
 #[allow(unused_variables)]
 extern "C" fn clipGetHandle(
     imageEffect: OfxImageEffectHandle,
@@ -56,7 +52,6 @@ extern "C" fn clipGetHandle(
     panic!("Not implemented!")
 }
 
-#[allow(non_snake_case)]
 #[allow(unused_variables)]
 extern "C" fn clipGetPropertySet(
     clip: OfxImageClipHandle,
@@ -64,7 +59,7 @@ extern "C" fn clipGetPropertySet(
 ) -> OfxStatus {
     panic!("Not implemented!")
 }
-#[allow(non_snake_case)]
+
 #[allow(unused_variables)]
 extern "C" fn clipGetImage(
     clip: OfxImageClipHandle,
@@ -74,13 +69,12 @@ extern "C" fn clipGetImage(
 ) -> OfxStatus {
     panic!("Not implemented!")
 }
-#[allow(non_snake_case)]
+
 #[allow(unused_variables)]
 extern "C" fn clipReleaseImage(imageHandle: OfxPropertySetHandle) -> OfxStatus {
     panic!("Not implemented!")
 }
 
-#[allow(non_snake_case)]
 #[allow(unused_variables)]
 extern "C" fn clipGetRegionOfDefinition(
     clip: OfxImageClipHandle,
@@ -89,12 +83,12 @@ extern "C" fn clipGetRegionOfDefinition(
 ) -> OfxStatus {
     panic!("Not implemented!")
 }
-#[allow(non_snake_case)]
+
 #[allow(unused_variables)]
 extern "C" fn abort(imageEffect: OfxImageEffectHandle) -> c_int {
     panic!("Not implemented!")
 }
-#[allow(non_snake_case)]
+
 #[allow(unused_variables)]
 extern "C" fn imageMemoryAlloc(
     instanceHandle: OfxImageEffectHandle,
@@ -103,13 +97,12 @@ extern "C" fn imageMemoryAlloc(
 ) -> OfxStatus {
     panic!("Not implemented!")
 }
-#[allow(non_snake_case)]
+
 #[allow(unused_variables)]
 extern "C" fn imageMemoryFree(memoryHandle: OfxImageMemoryHandle) -> OfxStatus {
     panic!("Not implemented!")
 }
 
-#[allow(non_snake_case)]
 #[allow(unused_variables)]
 extern "C" fn imageMemoryLock(
     memoryHandle: OfxImageMemoryHandle,
@@ -117,7 +110,6 @@ extern "C" fn imageMemoryLock(
 ) -> OfxStatus {
     panic!("Not implemented!")
 }
-#[allow(non_snake_case)]
 #[allow(unused_variables)]
 extern "C" fn imageMemoryUnlock(memoryHandle: OfxImageMemoryHandle) -> OfxStatus {
     panic!("Not implemented!")
@@ -151,8 +143,6 @@ fn set_property(
     OfxStatus::OK
 }
 
-#[allow(non_snake_case)]
-#[allow(unused_variables)]
 extern "C" fn propSetPointer(
     properties: OfxPropertySetHandle,
     property: *const c_char,
@@ -161,8 +151,7 @@ extern "C" fn propSetPointer(
 ) -> OfxStatus {
     set_property(properties, property, index, value.into())
 }
-#[allow(non_snake_case)]
-#[allow(unused_variables)]
+
 extern "C" fn propSetString(
     properties: OfxPropertySetHandle,
     property: *const c_char,
@@ -175,8 +164,7 @@ extern "C" fn propSetString(
         OfxStatus::ErrUnknown
     }
 }
-#[allow(non_snake_case)]
-#[allow(unused_variables)]
+
 extern "C" fn propSetDouble(
     properties: OfxPropertySetHandle,
     property: *const c_char,
@@ -185,8 +173,7 @@ extern "C" fn propSetDouble(
 ) -> OfxStatus {
     set_property(properties, property, index, value.into())
 }
-#[allow(non_snake_case)]
-#[allow(unused_variables)]
+
 extern "C" fn propSetInt(
     properties: OfxPropertySetHandle,
     property: *const c_char,
@@ -195,7 +182,7 @@ extern "C" fn propSetInt(
 ) -> OfxStatus {
     set_property(properties, property, index, value.into())
 }
-#[allow(non_snake_case)]
+
 #[allow(unused_variables)]
 extern "C" fn propSetPointerN(
     properties: OfxPropertySetHandle,
@@ -205,7 +192,7 @@ extern "C" fn propSetPointerN(
 ) -> OfxStatus {
     panic!("Not implemented!");
 }
-#[allow(non_snake_case)]
+
 #[allow(unused_variables)]
 extern "C" fn propSetStringN(
     properties: OfxPropertySetHandle,
@@ -215,7 +202,7 @@ extern "C" fn propSetStringN(
 ) -> OfxStatus {
     panic!("Not implemented!");
 }
-#[allow(non_snake_case)]
+
 #[allow(unused_variables)]
 extern "C" fn propSetDoubleN(
     properties: OfxPropertySetHandle,
@@ -225,7 +212,7 @@ extern "C" fn propSetDoubleN(
 ) -> OfxStatus {
     panic!("Not implemented!");
 }
-#[allow(non_snake_case)]
+
 #[allow(unused_variables)]
 extern "C" fn propSetIntN(
     properties: OfxPropertySetHandle,
@@ -235,8 +222,7 @@ extern "C" fn propSetIntN(
 ) -> OfxStatus {
     panic!("Not implemented!");
 }
-#[allow(non_snake_case)]
-#[allow(unused_variables)]
+
 extern "C" fn propGetPointer(
     properties: OfxPropertySetHandle,
     property: *const c_char,
@@ -263,8 +249,6 @@ extern "C" fn propGetPointer(
     })
 }
 
-#[allow(non_snake_case)]
-#[allow(unused_variables)]
 extern "C" fn propGetString(
     properties: OfxPropertySetHandle,
     property: *const c_char,
@@ -291,8 +275,6 @@ extern "C" fn propGetString(
     })
 }
 
-#[allow(non_snake_case)]
-#[allow(unused_variables)]
 extern "C" fn propGetDouble(
     properties: OfxPropertySetHandle,
     property: *const c_char,
@@ -318,8 +300,7 @@ extern "C" fn propGetDouble(
         Err(e) => e,
     })
 }
-#[allow(non_snake_case)]
-#[allow(unused_variables)]
+
 extern "C" fn propGetInt(
     properties: OfxPropertySetHandle,
     property: *const c_char,
@@ -346,7 +327,6 @@ extern "C" fn propGetInt(
     })
 }
 
-#[allow(non_snake_case)]
 #[allow(unused_variables)]
 extern "C" fn propGetPointerN(
     properties: OfxPropertySetHandle,
@@ -356,7 +336,7 @@ extern "C" fn propGetPointerN(
 ) -> OfxStatus {
     panic!("Not implemented!");
 }
-#[allow(non_snake_case)]
+
 #[allow(unused_variables)]
 extern "C" fn propGetStringN(
     properties: OfxPropertySetHandle,
@@ -366,7 +346,7 @@ extern "C" fn propGetStringN(
 ) -> OfxStatus {
     panic!("Not implemented!");
 }
-#[allow(non_snake_case)]
+
 #[allow(unused_variables)]
 extern "C" fn propGetDoubleN(
     properties: OfxPropertySetHandle,
@@ -376,7 +356,7 @@ extern "C" fn propGetDoubleN(
 ) -> OfxStatus {
     panic!("Not implemented!");
 }
-#[allow(non_snake_case)]
+
 #[allow(unused_variables)]
 extern "C" fn propGetIntN(
     properties: OfxPropertySetHandle,
@@ -386,7 +366,7 @@ extern "C" fn propGetIntN(
 ) -> OfxStatus {
     panic!("Not implemented!");
 }
-#[allow(non_snake_case)]
+
 #[allow(unused_variables)]
 extern "C" fn propReset(
     properties: OfxPropertySetHandle,
@@ -394,8 +374,7 @@ extern "C" fn propReset(
 ) -> OfxStatus {
     panic!("Not implemented!");
 }
-#[allow(non_snake_case)]
-#[allow(unused_variables)]
+
 extern "C" fn propGetDimension(
     properties: OfxPropertySetHandle,
     property: *const c_char,
@@ -435,7 +414,6 @@ pub const PROPERTY_SUITE: OfxPropertySuiteV1 = OfxPropertySuiteV1 {
 };
 
 // ========= Parameter suite =========
-#[allow(non_snake_case)]
 #[allow(unused_variables)]
 extern "C" fn paramDefine(
     paramSet: OfxParamSetHandle,
@@ -458,7 +436,7 @@ extern "C" fn paramDefine(
         OfxStatus::ErrUnknown
     }
 }
-#[allow(non_snake_case)]
+
 #[allow(unused_variables)]
 extern "C" fn paramGetHandle(
     paramSet: OfxParamSetHandle,
@@ -468,8 +446,7 @@ extern "C" fn paramGetHandle(
 ) -> OfxStatus {
     panic!("Not implemented!")
 }
-#[allow(non_snake_case)]
-#[allow(unused_variables)]
+
 extern "C" fn paramSetGetPropertySet(
     paramSet: OfxParamSetHandle,
     propHandle: *mut OfxPropertySetHandle,
@@ -477,7 +454,7 @@ extern "C" fn paramSetGetPropertySet(
     unsafe { *propHandle = paramSet.with_object(|p| p.properties.clone().into()) };
     OfxStatus::OK
 }
-#[allow(non_snake_case)]
+
 #[allow(unused_variables)]
 extern "C" fn paramGetPropertySet(
     paramHandle: OfxParamHandle,
@@ -485,12 +462,12 @@ extern "C" fn paramGetPropertySet(
 ) -> OfxStatus {
     panic!("Not implemented!")
 }
-#[allow(non_snake_case)]
+
 #[allow(unused_variables)]
 extern "C" fn paramGetValue(paramHandle: OfxParamHandle) -> OfxStatus {
     panic!("Not implemented!")
 }
-#[allow(non_snake_case)]
+
 #[allow(unused_variables)]
 extern "C" fn paramGetValueAtTime(
     paramHandle: OfxParamHandle,
@@ -498,7 +475,7 @@ extern "C" fn paramGetValueAtTime(
 ) -> OfxStatus {
     panic!("Not implemented!")
 }
-#[allow(non_snake_case)]
+
 #[allow(unused_variables)]
 extern "C" fn paramGetDerivative(
     paramHandle: OfxParamHandle,
@@ -506,7 +483,7 @@ extern "C" fn paramGetDerivative(
 ) -> OfxStatus {
     panic!("Not implemented!")
 }
-#[allow(non_snake_case)]
+
 #[allow(unused_variables)]
 extern "C" fn paramGetIntegral(
     paramHandle: OfxParamHandle,
@@ -515,12 +492,12 @@ extern "C" fn paramGetIntegral(
 ) -> OfxStatus {
     panic!("Not implemented!")
 }
-#[allow(non_snake_case)]
+
 #[allow(unused_variables)]
 extern "C" fn paramSetValue(paramHandle: OfxParamHandle) -> OfxStatus {
     panic!("Not implemented!")
 }
-#[allow(non_snake_case)]
+
 #[allow(unused_variables)]
 extern "C" fn paramSetValueAtTime(
     paramHandle: OfxParamHandle,
@@ -528,7 +505,7 @@ extern "C" fn paramSetValueAtTime(
 ) -> OfxStatus {
     panic!("Not implemented!")
 }
-#[allow(non_snake_case)]
+
 #[allow(unused_variables)]
 extern "C" fn paramGetNumKeys(
     paramHandle: OfxParamHandle,
@@ -536,7 +513,7 @@ extern "C" fn paramGetNumKeys(
 ) -> OfxStatus {
     panic!("Not implemented!")
 }
-#[allow(non_snake_case)]
+
 #[allow(unused_variables)]
 extern "C" fn paramGetKeyTime(
     paramHandle: OfxParamHandle,
@@ -545,7 +522,7 @@ extern "C" fn paramGetKeyTime(
 ) -> OfxStatus {
     panic!("Not implemented!")
 }
-#[allow(non_snake_case)]
+
 #[allow(unused_variables)]
 extern "C" fn paramGetKeyIndex(
     paramHandle: OfxParamHandle,
@@ -555,17 +532,17 @@ extern "C" fn paramGetKeyIndex(
 ) -> OfxStatus {
     panic!("Not implemented!")
 }
-#[allow(non_snake_case)]
+
 #[allow(unused_variables)]
 extern "C" fn paramDeleteKey(paramHandle: OfxParamHandle, time: OfxTime) -> OfxStatus {
     panic!("Not implemented!")
 }
-#[allow(non_snake_case)]
+
 #[allow(unused_variables)]
 extern "C" fn paramDeleteAllKeys(paramHandle: OfxParamHandle) -> OfxStatus {
     panic!("Not implemented!")
 }
-#[allow(non_snake_case)]
+
 #[allow(unused_variables)]
 extern "C" fn paramCopy(
     paramTo: OfxParamHandle,
@@ -575,7 +552,7 @@ extern "C" fn paramCopy(
 ) -> OfxStatus {
     panic!("Not implemented!")
 }
-#[allow(non_snake_case)]
+
 #[allow(unused_variables)]
 extern "C" fn paramEditBegin(
     paramSet: OfxParamSetHandle,
@@ -583,7 +560,7 @@ extern "C" fn paramEditBegin(
 ) -> OfxStatus {
     panic!("Not implemented!")
 }
-#[allow(non_snake_case)]
+
 #[allow(unused_variables)]
 extern "C" fn paramEditEnd(paramSet: OfxParamSetHandle) -> OfxStatus {
     panic!("Not implemented!")
@@ -611,7 +588,6 @@ pub const PARAMETER_SUITE: OfxParameterSuiteV1 = OfxParameterSuiteV1 {
 };
 
 // ========= MessageSuiteV1 =========
-#[allow(non_snake_case)]
 #[allow(unused_variables)]
 extern "C" fn message(
     handle: *mut c_void,
@@ -625,7 +601,6 @@ extern "C" fn message(
 pub const MESSAGE_SUITE: OfxMessageSuiteV1 = OfxMessageSuiteV1 { message };
 
 // ========= Memory suite =========
-#[allow(non_snake_case)]
 #[allow(unused_variables)]
 extern "C" fn memoryAlloc(
     handle: *mut c_void,
@@ -634,7 +609,7 @@ extern "C" fn memoryAlloc(
 ) -> OfxStatus {
     panic!("Not implemented!")
 }
-#[allow(non_snake_case)]
+
 #[allow(unused_variables)]
 extern "C" fn memoryFree(allocatedData: *mut c_void) -> OfxStatus {
     panic!("Not implemented!")
@@ -647,7 +622,6 @@ pub const MEMORY_SUITE: OfxMemorySuiteV1 = OfxMemorySuiteV1 {
 
 // ========= Multithread suite =========
 
-#[allow(non_snake_case)]
 #[allow(unused_variables)]
 extern "C" fn multiThread(
     func: OfxThreadFunctionV1,
@@ -656,42 +630,42 @@ extern "C" fn multiThread(
 ) -> OfxStatus {
     panic!("Not implemented!")
 }
-#[allow(non_snake_case)]
+
 #[allow(unused_variables)]
 extern "C" fn multiThreadNumCPUs(nCPUs: *mut c_int) -> OfxStatus {
     panic!("Not implemented!")
 }
-#[allow(non_snake_case)]
+
 #[allow(unused_variables)]
 extern "C" fn multiThreadIndex(threadIndex: *mut c_int) -> OfxStatus {
     panic!("Not implemented!")
 }
-#[allow(non_snake_case)]
+
 #[allow(unused_variables)]
 extern "C" fn multiThreadIsSpawnedThread() -> c_int {
     panic!("Not implemented!")
 }
-#[allow(non_snake_case)]
+
 #[allow(unused_variables)]
 extern "C" fn mutexCreate(mutex: OfxMutexHandle, lockCount: c_int) -> OfxStatus {
     panic!("Not implemented!")
 }
-#[allow(non_snake_case)]
+
 #[allow(unused_variables)]
 extern "C" fn mutexDestroy(mutex: OfxMutexConstHandle) -> OfxStatus {
     panic!("Not implemented!")
 }
-#[allow(non_snake_case)]
+
 #[allow(unused_variables)]
 extern "C" fn mutexLock(mutex: OfxMutexConstHandle) -> OfxStatus {
     panic!("Not implemented!")
 }
-#[allow(non_snake_case)]
+
 #[allow(unused_variables)]
 extern "C" fn mutexUnLock(mutex: OfxMutexConstHandle) -> OfxStatus {
     panic!("Not implemented!")
 }
-#[allow(non_snake_case)]
+
 #[allow(unused_variables)]
 extern "C" fn mutexTryLock(mutex: OfxMutexConstHandle) -> OfxStatus {
     panic!("Not implemented!")

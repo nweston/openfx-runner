@@ -1,4 +1,5 @@
 // Types defined by the OFX API
+#![allow(non_snake_case)]
 
 use std::ffi::{c_char, c_double, c_int, c_uint, c_void};
 
@@ -56,7 +57,7 @@ pub enum OfxStatus {
 }
 
 pub type OfxTime = c_double;
-#[allow(dead_code)]
+
 #[repr(C)]
 pub struct OfxRectD {
     pub x1: c_double,
@@ -64,14 +65,13 @@ pub struct OfxRectD {
     pub x2: c_double,
     pub y2: c_double,
 }
-#[allow(dead_code)]
+
 #[repr(C)]
 pub struct OfxRangeD {
     pub min: c_double,
     pub max: c_double,
 }
 
-#[allow(non_snake_case)]
 #[repr(C)]
 pub struct OfxHost {
     pub host: OfxPropertySetHandle,
@@ -79,7 +79,6 @@ pub struct OfxHost {
         extern "C" fn(OfxPropertySetHandle, *const c_char, c_int) -> *const c_void,
 }
 
-#[allow(non_snake_case)]
 #[repr(C)]
 pub struct OfxPlugin {
     pub pluginApi: *const c_char,
