@@ -368,6 +368,24 @@ where
 #[derive(Default, Debug)]
 pub struct PropertySet(HashMap<String, Property>);
 
+impl PropertySet {
+    fn get(&self, key: &str, index: usize) -> Result<&PropertyValue, OfxStatus> {
+        self.0
+            .get(key)
+            .ok_or(OfxStatus::ErrUnknown)
+            .and_then(|values| values.0.get(index).ok_or(OfxStatus::ErrBadIndex))
+    }
+
+    fn set(&mut self, key: &str, index: usize, value: PropertyValue) -> () {
+        let prop = self.0.entry(key.to_string()).or_insert(Default::default());
+        let uindex = index as usize;
+        if uindex >= prop.0.len() {
+            prop.0.resize_with(uindex + 1, || PropertyValue::Unset)
+        }
+        prop.0[uindex] = value;
+    }
+}
+
 impl<const S: usize> From<[(&str, Property); S]> for PropertySet {
     fn from(slice: [(&str, Property); S]) -> Self {
         let mut map = HashMap::new();
@@ -450,8 +468,8 @@ fn ofx_bundles() -> Vec<Bundle> {
     Vec::new()
 }
 
-unsafe fn cstr_to_string(s: *const c_char) -> String {
-    CStr::from_ptr(s).to_str().unwrap().to_string()
+fn cstr_to_string(s: *const c_char) -> String {
+    unsafe { CStr::from_ptr(s).to_str().unwrap().to_string() }
 }
 
 #[allow(unused_variables)]
