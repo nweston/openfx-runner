@@ -32,9 +32,10 @@ extern "C" fn clipDefine(
     propertySet: *mut OfxPropertySetHandle,
 ) -> OfxStatus {
     if let Ok(name_str) = unsafe { CStr::from_ptr(name).to_str() } {
-        let clip = imageEffect.with_object(|effect| effect.create_clip(name_str));
+        let props = imageEffect
+            .with_object(|effect| effect.create_clip(name_str).get().properties.clone());
         unsafe {
-            *propertySet = clip.into();
+            *propertySet = props.into();
         }
         OfxStatus::OK
     } else {
@@ -49,7 +50,21 @@ extern "C" fn clipGetHandle(
     clip: *mut OfxImageClipHandle,
     propertySet: *mut OfxPropertySetHandle,
 ) -> OfxStatus {
-    panic!("Not implemented!")
+    if let Ok(name_str) = unsafe { CStr::from_ptr(name).to_str() } {
+        imageEffect.with_object(|effect| {
+            if let Some(c) = effect.clips.get(name_str) {
+                unsafe {
+                    *clip = c.clone().into();
+                    *propertySet = c.get().properties.clone().into();
+                }
+                OfxStatus::OK
+            } else {
+                OfxStatus::ErrUnknown
+            }
+        })
+    } else {
+        OfxStatus::ErrUnknown
+    }
 }
 
 #[allow(unused_variables)]
@@ -57,7 +72,11 @@ extern "C" fn clipGetPropertySet(
     clip: OfxImageClipHandle,
     propHandle: *mut OfxPropertySetHandle,
 ) -> OfxStatus {
-    panic!("Not implemented!")
+    clip.with_object(|c| {
+        let handle = c.properties.clone().into();
+        unsafe { *propHandle = handle }
+    });
+    OfxStatus::OK
 }
 
 #[allow(unused_variables)]

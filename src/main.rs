@@ -167,6 +167,7 @@ macro_rules! impl_handle {
 impl_handle!(OfxImageEffectHandle, ImageEffect);
 impl_handle!(OfxParamSetHandle, ParamSet);
 impl_handle!(OfxPropertySetHandle, PropertySet);
+impl_handle!(OfxImageClipHandle, Clip);
 
 #[derive(Debug)]
 struct GenericError {
@@ -285,15 +286,28 @@ impl Default for ParamSet {
 }
 
 #[derive(Debug)]
+pub struct Clip {
+    properties: Object<PropertySet>,
+}
+
+impl IntoObject for Clip {}
+
+#[derive(Clone, Debug)]
 pub struct ImageEffect {
     properties: Object<PropertySet>,
     param_set: Object<ParamSet>,
-    clips: HashMap<String, Object<PropertySet>>,
+    clips: HashMap<String, Object<Clip>>,
 }
 
 impl ImageEffect {
-    fn create_clip(&mut self, name: &str) -> Object<PropertySet> {
-        self.clips.insert(name.into(), Default::default());
+    fn create_clip(&mut self, name: &str) -> Object<Clip> {
+        self.clips.insert(
+            name.into(),
+            Clip {
+                properties: Default::default(),
+            }
+            .into_object(),
+        );
         self.clips.get(name).unwrap().clone()
     }
 }
@@ -689,6 +703,12 @@ fn process_bundle(host: &OfxHost, bundle: &Bundle) -> Result<(), Box<dyn Error>>
         // Instance of the filter. Both instances and descriptors are
         // ImageEffect objects.
         let filter_instance: Object<ImageEffect> = Default::default();
+        filter_instance.get().properties.get().set(
+            OfxImageEffectPropContext,
+            0,
+            OfxImageEffectContextFilter.into(),
+        );
+
         println!(
             " create instance: {:?}",
             p.call_action(
