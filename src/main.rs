@@ -290,6 +290,15 @@ pub struct Clip {
     properties: Object<PropertySet>,
 }
 
+impl Clone for Clip {
+    fn clone(&self) -> Self {
+        // Deep copy the properties
+        Self {
+            properties: self.properties.get().clone().into_object(),
+        }
+    }
+}
+
 impl IntoObject for Clip {}
 
 #[derive(Clone, Debug)]
@@ -357,11 +366,11 @@ impl Plugin {
 
 /// An opaque memory address. Used for pointer properties which are
 /// never dereferenced by the host, but only pass back to the plugin.
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 struct Addr(*const c_void);
 unsafe impl Send for Addr {}
 
-#[derive(PartialEq)]
+#[derive(Clone, PartialEq)]
 enum PropertyValue {
     Pointer(Addr),
     String(CString),
@@ -420,7 +429,7 @@ impl From<*mut c_void> for PropertyValue {
     }
 }
 
-#[derive(Default, Debug)]
+#[derive(Clone, Default, Debug)]
 struct Property(Vec<PropertyValue>);
 
 // Make a PropertyValue from a single value
@@ -449,7 +458,7 @@ where
     }
 }
 
-#[derive(Default, Debug)]
+#[derive(Clone, Default, Debug)]
 pub struct PropertySet {
     name: String,
     values: HashMap<String, Property>,
@@ -623,6 +632,21 @@ fn get_plugins(lib: &libloading::Library) -> Result<Vec<Plugin>, Box<dyn Error>>
     Ok(plugins)
 }
 
+fn create_instance(descriptor: &ImageEffect, context: &str) -> ImageEffect {
+    let mut instance: ImageEffect = Default::default();
+    // TODO: adjust clips according to context
+    instance.clips = descriptor
+        .clips
+        .iter()
+        .map(|(key, val)| (key.clone(), val.get().clone().into_object()))
+        .collect();
+    instance
+        .properties
+        .get()
+        .set(OfxImageEffectPropContext, 0, context.into());
+    instance
+}
+
 fn process_bundle(host: &OfxHost, bundle: &Bundle) -> Result<(), Box<dyn Error>> {
     let lib = bundle.load()?;
     let plugins = get_plugins(&lib)?;
@@ -702,12 +726,8 @@ fn process_bundle(host: &OfxHost, bundle: &Bundle) -> Result<(), Box<dyn Error>>
 
         // Instance of the filter. Both instances and descriptors are
         // ImageEffect objects.
-        let filter_instance: Object<ImageEffect> = Default::default();
-        filter_instance.get().properties.get().set(
-            OfxImageEffectPropContext,
-            0,
-            OfxImageEffectContextFilter.into(),
-        );
+        let filter_instance: Object<ImageEffect> =
+            create_instance(&filter.get(), OfxImageEffectContextFilter).into_object();
 
         println!(
             " create instance: {:?}",
