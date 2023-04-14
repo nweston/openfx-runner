@@ -473,7 +473,21 @@ extern "C" fn paramGetHandle(
     param: *mut OfxParamHandle,
     propertySet: *mut OfxPropertySetHandle,
 ) -> OfxStatus {
-    panic!("Not implemented!")
+    if let Ok(name_str) = unsafe { CStr::from_ptr(name).to_str() } {
+        paramSet.with_object(|ps| {
+            if let Some(p) = ps.params.get(name_str) {
+                unsafe {
+                    *param = p.clone().into();
+                    *propertySet = p.get().properties.clone().into();
+                }
+                OfxStatus::OK
+            } else {
+                OfxStatus::ErrUnknown
+            }
+        })
+    } else {
+        OfxStatus::ErrUnknown
+    }
 }
 
 extern "C" fn paramSetGetPropertySet(
@@ -489,7 +503,10 @@ extern "C" fn paramGetPropertySet(
     paramHandle: OfxParamHandle,
     propHandle: *mut OfxPropertySetHandle,
 ) -> OfxStatus {
-    panic!("Not implemented!")
+    paramHandle.with_object(|param| unsafe {
+        *propHandle = param.properties.clone().into();
+    });
+    OfxStatus::OK
 }
 
 #[allow(unused_variables)]
