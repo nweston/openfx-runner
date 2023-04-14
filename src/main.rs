@@ -168,6 +168,7 @@ impl_handle!(OfxImageEffectHandle, ImageEffect);
 impl_handle!(OfxParamSetHandle, ParamSet);
 impl_handle!(OfxPropertySetHandle, PropertySet);
 impl_handle!(OfxImageClipHandle, Clip);
+impl_handle!(OfxParamHandle, Param);
 
 #[derive(Debug)]
 struct GenericError {
@@ -198,81 +199,95 @@ impl From<&str> for GenericError {
 
 #[derive(Debug)]
 #[allow(dead_code)]
-enum ParamType {
-    Boolean,
-    Choice,
+enum ParamValue {
+    Boolean(bool),
+    Choice { options: Vec<String>, index: usize },
     Custom,
-    Double,
+    Double(f64),
     Double2D,
     Double3D,
     Group,
-    Integer,
+    Integer(i32),
     Integer2D,
     Integer3D,
     Page,
-    Parametric,
+    ParamValueParametric,
     PushButton,
-    RGB,
+    RGB { r: f64, g: f64, b: f64 },
     RGBA,
     StrChoice,
-    String,
+    String(String),
 }
 
-impl ParamType {
-    fn from_name(name: &str) -> Self {
-        if name == OfxParamTypeBoolean {
-            Self::Boolean
-        } else if name == OfxParamTypeChoice {
-            Self::Choice
-        } else if name == OfxParamTypeDouble {
-            Self::Double
-        } else if name == OfxParamTypeGroup {
-            Self::Group
-        } else if name == OfxParamTypeInteger {
-            Self::Integer
-        } else if name == OfxParamTypePage {
-            Self::Page
-        } else if name == OfxParamTypeRGB {
-            Self::RGB
-        } else if name == OfxParamTypePushButton {
-            Self::PushButton
-        } else if name == OfxParamTypeString {
-            Self::String
-        } else {
-            dbg!(name);
-            panic!("Not implemented")
+impl ParamValue {
+    fn from_descriptor(props: &PropertySet) -> Self {
+        #[allow(non_upper_case_globals)]
+        match props
+            .get_type::<String>(OfxParamPropType, 0)
+            .unwrap()
+            .as_str()
+        {
+            OfxParamTypeBoolean => Self::Boolean(
+                props
+                    .get_type::<bool>(OfxParamPropDefault, 0)
+                    .unwrap_or(false),
+            ),
+            OfxParamTypeInteger => {
+                Self::Integer(props.get_type::<i32>(OfxParamPropDefault, 0).unwrap_or(0))
+            }
+            OfxParamTypeDouble => {
+                Self::Double(props.get_type::<f64>(OfxParamPropDefault, 0).unwrap_or(0.0))
+            }
+            OfxParamTypeString => Self::String(
+                props
+                    .get_type::<String>(OfxParamPropDefault, 0)
+                    .unwrap_or("".into()),
+            ),
+            OfxParamTypeChoice => Self::Choice {
+                options: Vec::new(),
+                index: props.get_type::<i32>(OfxParamPropDefault, 0).unwrap_or(0)
+                    as usize,
+            },
+            OfxParamTypePushButton => Self::PushButton,
+            OfxParamTypePage => Self::Page,
+            OfxParamTypeGroup => Self::Group,
+            s => panic!("ParamValue type not implemented: {}", s),
         }
     }
 }
 
-// Static properties of a parameter
 #[derive(Debug)]
-#[allow(dead_code)]
-struct ParamDefinition {
-    kind: ParamType,
+struct Param {
+    value: ParamValue,
     properties: Object<PropertySet>,
 }
+
+impl Param {
+    fn from_descriptor(props: &PropertySet) -> Self {
+        Self {
+            value: ParamValue::from_descriptor(props),
+            properties: props.clone().into_object(),
+        }
+    }
+}
+impl IntoObject for Param {}
 
 #[derive(Debug)]
 struct ParamSet {
     properties: Object<PropertySet>,
-    params: HashMap<String, ParamDefinition>,
+    descriptors: Vec<Object<PropertySet>>,
+    params: HashMap<String, Object<Param>>,
 }
 
 impl ParamSet {
     fn create_param(&mut self, kind: &str, name: &str) -> OfxPropertySetHandle {
-        self.params.insert(
-            name.into(),
-            ParamDefinition {
-                kind: ParamType::from_name(kind),
-                properties: PropertySet {
-                    name: "param_".to_string() + name,
-                    ..Default::default()
-                }
-                .into_object(),
-            },
-        );
-        self.params.get_mut(name).unwrap().properties.clone().into()
+        let props = PropertySet::new(
+            &("param_".to_string() + name),
+            [(OfxPropName, name.into()), (OfxParamPropType, kind.into())],
+        )
+        .into_object();
+        self.descriptors.push(props.clone());
+        props.into()
     }
 }
 
@@ -280,10 +295,13 @@ impl Default for ParamSet {
     fn default() -> Self {
         Self {
             properties: PropertySet::new("paramSet", []).into_object(),
+            descriptors: Default::default(),
             params: Default::default(),
         }
     }
 }
+
+impl IntoObject for ParamSet {}
 
 #[derive(Debug)]
 pub struct Clip {
@@ -429,6 +447,46 @@ impl From<*mut c_void> for PropertyValue {
     }
 }
 
+impl From<PropertyValue> for String {
+    fn from(p: PropertyValue) -> Self {
+        if let PropertyValue::String(val) = p {
+            val.into_string().unwrap()
+        } else {
+            panic!("Expected String value, got {:?}", p);
+        }
+    }
+}
+
+impl From<PropertyValue> for bool {
+    fn from(p: PropertyValue) -> Self {
+        if let PropertyValue::Int(val) = p {
+            val != 0
+        } else {
+            panic!("Expected Boolean value, got {:?}", p);
+        }
+    }
+}
+
+impl From<PropertyValue> for i32 {
+    fn from(p: PropertyValue) -> Self {
+        if let PropertyValue::Int(val) = p {
+            val
+        } else {
+            panic!("Expected Int value, got {:?}", p);
+        }
+    }
+}
+
+impl From<PropertyValue> for f64 {
+    fn from(p: PropertyValue) -> Self {
+        if let PropertyValue::Double(val) = p {
+            val
+        } else {
+            panic!("Expected Double value, got {:?}", p);
+        }
+    }
+}
+
 #[derive(Clone, Default, Debug)]
 struct Property(Vec<PropertyValue>);
 
@@ -484,6 +542,16 @@ impl PropertySet {
                 OfxStatus::ErrUnknown
             })
             .and_then(|values| values.0.get(index).ok_or(OfxStatus::ErrBadIndex))
+    }
+
+    /// Get a value and convert to the desired type.
+    ///
+    /// Returns None for missing property, panics on wrong type.
+    fn get_type<T>(&self, key: &str, index: usize) -> Option<T>
+    where
+        T: Clone + From<PropertyValue>,
+    {
+        self.get(key, index).ok().map(|v| v.clone().into())
     }
 
     fn set(&mut self, key: &str, index: usize, value: PropertyValue) -> () {
@@ -632,19 +700,48 @@ fn get_plugins(lib: &libloading::Library) -> Result<Vec<Plugin>, Box<dyn Error>>
     Ok(plugins)
 }
 
-fn create_instance(descriptor: &ImageEffect, context: &str) -> ImageEffect {
-    let mut instance: ImageEffect = Default::default();
-    // TODO: adjust clips according to context
-    instance.clips = descriptor
-        .clips
-        .iter()
+fn copy_map<T>(h: &HashMap<String, Object<T>>) -> HashMap<String, Object<T>>
+where
+    T: Clone + IntoObject,
+{
+    h.iter()
         .map(|(key, val)| (key.clone(), val.get().clone().into_object()))
-        .collect();
-    instance
-        .properties
-        .get()
-        .set(OfxImageEffectPropContext, 0, context.into());
-    instance
+        .collect()
+}
+
+fn create_params(
+    descriptors: &Vec<Object<PropertySet>>,
+) -> HashMap<String, Object<Param>> {
+    descriptors
+        .iter()
+        .map(|d| {
+            let props = d.get();
+            (
+                props.get_type::<String>(OfxPropName, 0).unwrap(),
+                Param::from_descriptor(&props).into_object(),
+            )
+        })
+        .collect()
+}
+
+fn create_instance(descriptor: &ImageEffect, context: &str) -> ImageEffect {
+    // TODO: adjust clips according to context
+    let clips = copy_map(&descriptor.clips);
+    let properties =
+        PropertySet::new("instance", [(OfxImageEffectPropContext, context.into())])
+            .into_object();
+    let descriptors = &descriptor.param_set.get().descriptors;
+    let param_set = ParamSet {
+        properties: Default::default(),
+        descriptors: descriptors.clone(),
+        params: create_params(&descriptors),
+    }
+    .into_object();
+    ImageEffect {
+        properties,
+        param_set,
+        clips,
+    }
 }
 
 fn process_bundle(host: &OfxHost, bundle: &Bundle) -> Result<(), Box<dyn Error>> {
