@@ -82,16 +82,25 @@ extern "C" fn clipGetPropertySet(
 #[allow(unused_variables)]
 extern "C" fn clipGetImage(
     clip: OfxImageClipHandle,
-    time: OfxTime,
-    region: *const OfxRectD,
+    _time: OfxTime,
+    _region: *const OfxRectD,
     imageHandle: *mut OfxPropertySetHandle,
 ) -> OfxStatus {
-    panic!("Not implemented!")
+    clip.with_object(|c| {
+        if let Some(ref image) = c.image {
+            unsafe {
+                *imageHandle = image.properties.clone().into();
+            }
+            OfxStatus::OK
+        } else {
+            OfxStatus::Failed
+        }
+    })
 }
 
 #[allow(unused_variables)]
-extern "C" fn clipReleaseImage(imageHandle: OfxPropertySetHandle) -> OfxStatus {
-    panic!("Not implemented!")
+extern "C" fn clipReleaseImage(_imageHandle: OfxPropertySetHandle) -> OfxStatus {
+    OfxStatus::OK
 }
 
 #[allow(unused_variables)]

@@ -303,9 +303,16 @@ impl Default for ParamSet {
 
 impl IntoObject for ParamSet {}
 
+#[derive(Clone, Debug)]
+pub struct Image {
+    properties: Object<PropertySet>,
+    pixels: Vec<f32>,
+}
+
 #[derive(Debug)]
 pub struct Clip {
     properties: Object<PropertySet>,
+    image: Option<Image>,
 }
 
 impl Clone for Clip {
@@ -313,6 +320,7 @@ impl Clone for Clip {
         // Deep copy the properties
         Self {
             properties: self.properties.get().clone().into_object(),
+            image: self.image.clone(),
         }
     }
 }
@@ -331,7 +339,15 @@ impl ImageEffect {
         self.clips.insert(
             name.into(),
             Clip {
-                properties: Default::default(),
+                properties: PropertySet::new(
+                    &format!("clip_{}", name),
+                    [
+                        (OfxImageEffectPropPixelDepth, OfxBitDepthFloat.into()),
+                        (OfxImageEffectPropComponents, OfxImageComponentRGBA.into()),
+                    ],
+                )
+                .into_object(),
+                image: None,
             }
             .into_object(),
         );
@@ -425,6 +441,12 @@ impl From<&str> for PropertyValue {
 impl From<c_int> for PropertyValue {
     fn from(i: c_int) -> Self {
         PropertyValue::Int(i)
+    }
+}
+
+impl From<usize> for PropertyValue {
+    fn from(i: usize) -> Self {
+        PropertyValue::Int(i as c_int)
     }
 }
 
@@ -744,6 +766,44 @@ fn create_instance(descriptor: &ImageEffect, context: &str) -> ImageEffect {
     }
 }
 
+fn create_images(effect: &mut ImageEffect, width: i32, height: i32) -> () {
+    let uwidth: usize = width.try_into().unwrap();
+    let uheight: usize = height.try_into().unwrap();
+    for (name, c) in effect.clips.iter() {
+        let mut pixels = Vec::new();
+        pixels.resize(4 * uwidth * uheight, 0.0);
+        let props = PropertySet::new(
+            &format!("{}_image", name),
+            [
+                (OfxPropType, OfxTypeImage.into()),
+                (OfxImageEffectPropPixelDepth, OfxBitDepthFloat.into()),
+                (OfxImageEffectPropComponents, OfxImageComponentRGBA.into()),
+                (
+                    OfxImageEffectPropPreMultiplication,
+                    OfxImagePreMultiplied.into(),
+                ),
+                (OfxImageEffectPropRenderScale, [1.0, 1.0].into()),
+                (OfxImagePropPixelAspectRatio, (1.0).into()),
+                (
+                    OfxImagePropData,
+                    (pixels.as_mut_ptr() as *mut c_void).into(),
+                ),
+                (OfxImagePropBounds, [0, 0, width, height].into()),
+                (OfxImagePropRegionOfDefinition, [0, 0, width, height].into()),
+                (
+                    OfxImagePropRowBytes,
+                    (4 * uwidth * std::mem::size_of::<f32>()).into(),
+                ),
+                (OfxImagePropField, OfxImageFieldNone.into()),
+            ],
+        );
+        c.get().image = Some(Image {
+            properties: props.into_object(),
+            pixels,
+        });
+    }
+}
+
 fn process_bundle(host: &OfxHost, bundle: &Bundle) -> Result<(), Box<dyn Error>> {
     let lib = bundle.load()?;
     let plugins = get_plugins(&lib)?;
@@ -836,6 +896,34 @@ fn process_bundle(host: &OfxHost, bundle: &Bundle) -> Result<(), Box<dyn Error>>
             )
         );
 
+        let width = 1920;
+        let height = 1080;
+
+        create_images(&mut filter_instance.get(), width, height);
+
+        let render_inargs = PropertySet::new(
+            "render_inargs",
+            [
+                (OfxPropTime, (0.0).into()),
+                (OfxImageEffectPropFieldToRender, OfxImageFieldNone.into()),
+                (OfxImageEffectPropRenderWindow, [0, 0, width, height].into()),
+                (OfxImageEffectPropRenderScale, [1.0, 1.0].into()),
+                (OfxImageEffectPropSequentialRenderStatus, false.into()),
+                (OfxImageEffectPropInteractiveRenderStatus, false.into()),
+                (OfxImageEffectPropRenderQualityDraft, false.into()),
+            ],
+        )
+        .into_object();
+        println!(
+            " render: {:?}",
+            p.call_action(
+                OfxImageEffectActionRender,
+                filter_instance.clone().into(),
+                OfxPropertySetHandle::from(render_inargs.clone()),
+                OfxPropertySetHandle::from(std::ptr::null_mut()),
+            )
+        );
+
         println!(
             " destroy instance: {:?}",
             p.call_action(
@@ -856,9 +944,9 @@ fn process_bundle(host: &OfxHost, bundle: &Bundle) -> Result<(), Box<dyn Error>>
             )
         );
 
-        println!(" effect: {:?}", effect);
-        println!(" filter: {:?}", filter);
-        println!(" instance: {:?}", filter_instance);
+        // println!(" effect: {:?}", effect);
+        // println!(" filter: {:?}", filter);
+        // println!(" instance: {:?}", filter_instance);
     }
     println!();
     Ok(())
