@@ -690,14 +690,21 @@ pub const PARAMETER_SUITE: OfxParameterSuiteV1 = OfxParameterSuiteV1 {
 };
 
 // ========= MessageSuiteV1 =========
-#[allow(unused_variables)]
 extern "C" fn message(
-    handle: *mut c_void,
+    _handle: *mut c_void,
     messageType: *const c_char,
     messageId: *const c_char,
     format: *const c_char,
 ) -> OfxStatus {
-    panic!("Not implemented!")
+    unsafe {
+        println!(
+            "\n{}: {}. {}\n",
+            CStr::from_ptr(messageType).to_str().unwrap(),
+            CStr::from_ptr(messageId).to_str().unwrap(),
+            CStr::from_ptr(format).to_str().unwrap()
+        );
+    }
+    OfxStatus::OK
 }
 
 pub const MESSAGE_SUITE: OfxMessageSuiteV1 = OfxMessageSuiteV1 { message };
