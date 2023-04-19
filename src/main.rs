@@ -749,9 +749,23 @@ fn create_params(
 fn create_instance(descriptor: &ImageEffect, context: &str) -> ImageEffect {
     // TODO: adjust clips according to context
     let clips = copy_map(&descriptor.clips);
-    let properties =
-        PropertySet::new("instance", [(OfxImageEffectPropContext, context.into())])
-            .into_object();
+    let properties = PropertySet::new(
+        "instance",
+        [
+            (OfxImageEffectPropContext, context.into()),
+            (
+                OfxPluginPropFilePath,
+                descriptor
+                    .properties
+                    .get()
+                    .values
+                    .get(OfxPluginPropFilePath)
+                    .unwrap()
+                    .clone(),
+            ),
+        ],
+    )
+    .into_object();
     let descriptors = &descriptor.param_set.get().descriptors;
     let param_set = ParamSet {
         properties: Default::default(),
@@ -767,6 +781,17 @@ fn create_instance(descriptor: &ImageEffect, context: &str) -> ImageEffect {
 }
 
 fn create_images(effect: &mut ImageEffect, width: i32, height: i32) -> () {
+    let project_dims: Property = [(width as f64), (height as f64)].into();
+    effect.properties.get().values.insert(
+        OfxImageEffectPropProjectSize.to_string(),
+        project_dims.clone(),
+    );
+    effect
+        .properties
+        .get()
+        .values
+        .insert(OfxImageEffectPropProjectExtent.to_string(), project_dims);
+
     let uwidth: usize = width.try_into().unwrap();
     let uheight: usize = height.try_into().unwrap();
     for (name, c) in effect.clips.iter() {
