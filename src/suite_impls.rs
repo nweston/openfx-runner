@@ -2,7 +2,7 @@
 use crate::cstr_to_string;
 use crate::suites::*;
 use crate::types::*;
-use crate::{Addr, Handle, PropertyValue};
+use crate::{Addr, Handle, ParamValue, PropertyValue};
 use std::ffi::{c_char, c_double, c_int, c_uint, c_void, CStr};
 
 // ========= ImageEffectSuite =========
@@ -518,17 +518,64 @@ extern "C" fn paramGetPropertySet(
     OfxStatus::OK
 }
 
-#[allow(unused_variables)]
-extern "C" fn paramGetValue(paramHandle: OfxParamHandle) -> OfxStatus {
-    panic!("Not implemented!")
+extern "C" {
+    fn paramGetValue(paramHandle: OfxParamHandle, ...) -> OfxStatus;
+    fn paramGetValueAtTime(paramHandle: OfxParamHandle, time: OfxTime, ...) -> OfxStatus;
 }
 
-#[allow(unused_variables)]
-extern "C" fn paramGetValueAtTime(
+#[no_mangle]
+pub extern "C" fn param_value_count(paramHandle: OfxParamHandle) -> c_int {
+    use ParamValue::*;
+    paramHandle.with_object(|p| match p.value {
+        Double2D | Integer2D => 2,
+        RGB { .. } | Double3D | Integer3D => 3,
+        _ => 1,
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn param_get_value_1(
     paramHandle: OfxParamHandle,
-    time: OfxTime,
+    value: *mut c_void,
 ) -> OfxStatus {
-    panic!("Not implemented!")
+    use ParamValue::*;
+    paramHandle.with_object(|p| match p.value {
+        Boolean(b) => unsafe { *(value as *mut c_int) = if b { 1 } else { 0 } },
+        Choice { index, .. } => unsafe { *(value as *mut c_int) = index as c_int },
+        Double(v) => unsafe { *(value as *mut c_double) = v },
+        Integer(v) => unsafe { *(value as *mut c_int) = v },
+        _ => panic!("not implemented"),
+    });
+    OfxStatus::OK
+}
+
+#[no_mangle]
+#[allow(unused_variables)]
+pub extern "C" fn param_get_value_2(
+    paramHandle: OfxParamHandle,
+    value1: *mut c_void,
+    value2: *mut c_void,
+) -> OfxStatus {
+    panic!("not implemented");
+}
+
+#[no_mangle]
+pub extern "C" fn param_get_value_3(
+    paramHandle: OfxParamHandle,
+    value1: *mut c_void,
+    value2: *mut c_void,
+    value3: *mut c_void,
+) -> OfxStatus {
+    use ParamValue::*;
+    paramHandle.with_object(|p| match p.value {
+        RGB { r, g, b } => unsafe {
+            *(value1 as *mut c_double) = r;
+            *(value2 as *mut c_double) = g;
+            *(value3 as *mut c_double) = b;
+        },
+        _ => panic!("not implemented"),
+    });
+    OfxStatus::OK
 }
 
 #[allow(unused_variables)]

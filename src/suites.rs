@@ -184,10 +184,13 @@ pub struct OfxParameterSuiteV1 {
         paramHandle: OfxParamHandle,
         propHandle: *mut OfxPropertySetHandle,
     ) -> OfxStatus,
-    // XXX: all GetValue functions use varargs to return values
-    pub paramGetValue: extern "C" fn(paramHandle: OfxParamHandle) -> OfxStatus,
-    pub paramGetValueAtTime:
-        extern "C" fn(paramHandle: OfxParamHandle, time: OfxTime) -> OfxStatus,
+    pub paramGetValue:
+        unsafe extern "C" fn(paramHandle: OfxParamHandle, ...) -> OfxStatus,
+    pub paramGetValueAtTime: unsafe extern "C" fn(
+        paramHandle: OfxParamHandle,
+        time: OfxTime,
+        ...
+    ) -> OfxStatus,
     pub paramGetDerivative:
         extern "C" fn(paramHandle: OfxParamHandle, time: OfxTime) -> OfxStatus,
     pub paramGetIntegral: extern "C" fn(
