@@ -17,6 +17,7 @@ use constants::suites::*;
 mod suite_impls;
 mod suites;
 mod types;
+use openexr::prelude::*;
 use types::*;
 
 /// Holder for objects which can cross the API boundary.
@@ -304,9 +305,91 @@ impl Default for ParamSet {
 impl IntoObject for ParamSet {}
 
 #[derive(Clone, Debug)]
+#[repr(C)]
+pub struct Pixel {
+    r: f32,
+    g: f32,
+    b: f32,
+    a: f32,
+}
+
+impl Pixel {
+    fn zero() -> Self {
+        Pixel {
+            r: 0.0,
+            g: 0.0,
+            b: 0.0,
+            a: 0.0,
+        }
+    }
+}
+
+impl From<Rgba> for Pixel {
+    fn from(p: Rgba) -> Self {
+        Pixel {
+            r: p.r.to_f32(),
+            g: p.g.to_f32(),
+            b: p.b.to_f32(),
+            a: p.a.to_f32(),
+        }
+    }
+}
+
+impl From<Pixel> for Rgba {
+    fn from(p: Pixel) -> Self {
+        Rgba::from_f32(p.r, p.g, p.b, p.a)
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct Image {
+    width: usize,
+    height: usize,
+    pixels: Vec<Pixel>,
     properties: Object<PropertySet>,
-    pixels: Vec<f32>,
+}
+
+impl Image {
+    fn new(name: &str, width: usize, height: usize, mut pixels: Vec<Pixel>) -> Self {
+        let properties = PropertySet::new(
+            &format!("{}_image", name),
+            [
+                (OfxPropType, OfxTypeImage.into()),
+                (OfxImageEffectPropPixelDepth, OfxBitDepthFloat.into()),
+                (OfxImageEffectPropComponents, OfxImageComponentRGBA.into()),
+                (
+                    OfxImageEffectPropPreMultiplication,
+                    OfxImagePreMultiplied.into(),
+                ),
+                (OfxImageEffectPropRenderScale, [1.0, 1.0].into()),
+                (OfxImagePropPixelAspectRatio, (1.0).into()),
+                (
+                    OfxImagePropData,
+                    (pixels.as_mut_ptr() as *mut c_void).into(),
+                ),
+                (OfxImagePropBounds, [0, 0, width, height].into()),
+                (OfxImagePropRegionOfDefinition, [0, 0, width, height].into()),
+                (
+                    OfxImagePropRowBytes,
+                    (width * std::mem::size_of::<Pixel>()).into(),
+                ),
+                (OfxImagePropField, OfxImageFieldNone.into()),
+            ],
+        )
+        .into_object();
+        Self {
+            width,
+            height,
+            pixels,
+            properties,
+        }
+    }
+
+    fn empty(name: &str, width: usize, height: usize) -> Self {
+        let mut pixels = Vec::new();
+        pixels.resize(width * height, Pixel::zero());
+        Self::new(name, width, height, pixels)
+    }
 }
 
 #[derive(Debug)]
@@ -780,7 +863,9 @@ fn create_instance(descriptor: &ImageEffect, context: &str) -> ImageEffect {
     }
 }
 
-fn create_images(effect: &mut ImageEffect, width: i32, height: i32) -> () {
+fn create_images(effect: &mut ImageEffect, input: Image) -> () {
+    let width = input.width;
+    let height = input.height;
     let project_dims: Property = [(width as f64), (height as f64)].into();
     effect.properties.get().values.insert(
         OfxImageEffectPropProjectSize.to_string(),
@@ -792,41 +877,9 @@ fn create_images(effect: &mut ImageEffect, width: i32, height: i32) -> () {
         .values
         .insert(OfxImageEffectPropProjectExtent.to_string(), project_dims);
 
-    let uwidth: usize = width.try_into().unwrap();
-    let uheight: usize = height.try_into().unwrap();
-    for (name, c) in effect.clips.iter() {
-        let mut pixels = Vec::new();
-        pixels.resize(4 * uwidth * uheight, 0.0);
-        let props = PropertySet::new(
-            &format!("{}_image", name),
-            [
-                (OfxPropType, OfxTypeImage.into()),
-                (OfxImageEffectPropPixelDepth, OfxBitDepthFloat.into()),
-                (OfxImageEffectPropComponents, OfxImageComponentRGBA.into()),
-                (
-                    OfxImageEffectPropPreMultiplication,
-                    OfxImagePreMultiplied.into(),
-                ),
-                (OfxImageEffectPropRenderScale, [1.0, 1.0].into()),
-                (OfxImagePropPixelAspectRatio, (1.0).into()),
-                (
-                    OfxImagePropData,
-                    (pixels.as_mut_ptr() as *mut c_void).into(),
-                ),
-                (OfxImagePropBounds, [0, 0, width, height].into()),
-                (OfxImagePropRegionOfDefinition, [0, 0, width, height].into()),
-                (
-                    OfxImagePropRowBytes,
-                    (4 * uwidth * std::mem::size_of::<f32>()).into(),
-                ),
-                (OfxImagePropField, OfxImageFieldNone.into()),
-            ],
-        );
-        c.get().image = Some(Image {
-            properties: props.into_object(),
-            pixels,
-        });
-    }
+    effect.clips.get("Source").unwrap().get().image = Some(input);
+    effect.clips.get("Output").unwrap().get().image =
+        Some(Image::empty("Output", width, height));
 }
 
 fn process_bundle(host: &OfxHost, bundle: &Bundle) -> Result<(), Box<dyn Error>> {
@@ -921,10 +974,11 @@ fn process_bundle(host: &OfxHost, bundle: &Bundle) -> Result<(), Box<dyn Error>>
             )
         );
 
-        let width = 1920;
-        let height = 1080;
+        let input = read_exr("input", "in.exr")?;
+        let width = input.width;
+        let height = input.height;
 
-        create_images(&mut filter_instance.get(), width, height);
+        create_images(&mut filter_instance.get(), input);
 
         let render_inargs = PropertySet::new(
             "render_inargs",
@@ -939,15 +993,30 @@ fn process_bundle(host: &OfxHost, bundle: &Bundle) -> Result<(), Box<dyn Error>>
             ],
         )
         .into_object();
-        println!(
-            " render: {:?}",
-            p.call_action(
-                OfxImageEffectActionRender,
-                filter_instance.clone().into(),
-                OfxPropertySetHandle::from(render_inargs.clone()),
-                OfxPropertySetHandle::from(std::ptr::null_mut()),
-            )
+
+        let render_stat = p.call_action(
+            OfxImageEffectActionRender,
+            filter_instance.clone().into(),
+            OfxPropertySetHandle::from(render_inargs.clone()),
+            OfxPropertySetHandle::from(std::ptr::null_mut()),
         );
+
+        println!(" render: {:?}", render_stat);
+        if render_stat == OfxStatus::OK {
+            write_exr(
+                "out.exr",
+                filter_instance
+                    .get()
+                    .clips
+                    .get("Output")
+                    .unwrap()
+                    .get()
+                    .image
+                    .as_ref()
+                    .unwrap()
+                    .clone(),
+            )?;
+        }
 
         println!(
             " destroy instance: {:?}",
@@ -974,6 +1043,42 @@ fn process_bundle(host: &OfxHost, bundle: &Bundle) -> Result<(), Box<dyn Error>>
         // println!(" instance: {:?}", filter_instance);
     }
     println!();
+    Ok(())
+}
+
+fn read_exr(name: &str, path: &str) -> Result<Image, Box<dyn Error>> {
+    let mut file = RgbaInputFile::new(path, 1)?;
+    // Note that windows in OpenEXR are ***inclusive*** bounds, so a
+    // 1920x1080 image has window [0, 0, 1919, 1079].
+    let data_window: [i32; 4] = *file.header().data_window();
+    let width = data_window.width() + 1;
+    let height = data_window.height() + 1;
+    let uwidth = width as usize;
+    let uheight = height as usize;
+
+    let mut half_pixels =
+        vec![Rgba::from_f32(0.0, 0.0, 0.0, 0.0); (width * height) as usize];
+    file.set_frame_buffer(&mut half_pixels, 1, width as usize)?;
+    unsafe {
+        file.read_pixels(0, height - 1)?;
+    }
+
+    let pixels = half_pixels.into_iter().map(|p| p.into()).collect();
+
+    Ok(Image::new(name, uwidth, uheight, pixels))
+}
+
+fn write_exr(filename: &str, image: Image) -> Result<(), Box<dyn Error>> {
+    let header = Header::from_dimensions(image.width as i32, image.height as i32);
+    let mut file = RgbaOutputFile::new(filename, &header, RgbaChannels::WriteRgba, 1)?;
+
+    let half_pixels: Vec<Rgba> = image.pixels.into_iter().map(|p| p.into()).collect();
+
+    file.set_frame_buffer(&half_pixels, 1, image.width)?;
+    unsafe {
+        file.write_pixels(image.height as i32)?;
+    }
+
     Ok(())
 }
 

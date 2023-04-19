@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 libloading = "0.7.4"
 once_cell = "1.17.1"
+openexr = "0.11.0"
 plist = "1.4.3"
 
 [build-dependencies]
