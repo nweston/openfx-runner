@@ -1,11 +1,13 @@
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
+use std::env;
 use std::error::Error;
 use std::ffi::{c_char, c_int, c_void, CStr, CString};
-use std::fs;
 use std::string::String;
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 
+mod commands;
+use commands::*;
 pub mod constants;
 use constants::actions::*;
 use constants::host::*;
@@ -479,6 +481,21 @@ impl Plugin {
         let c_action = CString::new(action).unwrap();
         (self.main_entry)(c_action.as_ptr(), handle_ptr, in_args, out_args)
     }
+
+    fn try_call_action(
+        &self,
+        action: &str,
+        handle: OfxImageEffectHandle,
+        in_args: OfxPropertySetHandle,
+        out_args: OfxPropertySetHandle,
+    ) -> Result<(), GenericError> {
+        let stat = self.call_action(action, handle, in_args, out_args);
+        if stat == OfxStatus::OK {
+            Ok(())
+        } else {
+            Err(format!("{} failed: {:?}", action, stat).as_str().into())
+        }
+    }
 }
 
 /// An opaque memory address. Used for pointer properties which are
@@ -717,34 +734,6 @@ impl Bundle {
     }
 }
 
-fn ofx_bundles() -> Vec<Bundle> {
-    if let Ok(dir) = fs::read_dir("/usr/OFX/Plugins/") {
-        let x = dir.filter_map(|entry| {
-            let path: std::path::PathBuf = entry.ok()?.path();
-            if path.is_dir() {
-                if let Some(f) = path.file_name() {
-                    if f.to_str().map_or(false, |s| s.ends_with(".ofx.bundle")) {
-                        match Bundle::new(path.clone()) {
-                            Ok(b) => return Some(b),
-                            Err(e) => {
-                                println!(
-                                    "Error loading bundle {}: {}",
-                                    path.display(),
-                                    e
-                                );
-                                return None;
-                            }
-                        }
-                    }
-                }
-            }
-            None
-        });
-        return x.collect();
-    }
-    Vec::new()
-}
-
 fn cstr_to_string(s: *const c_char) -> String {
     unsafe { CStr::from_ptr(s).to_str().unwrap().to_string() }
 }
@@ -879,170 +868,6 @@ fn create_images(effect: &mut ImageEffect, input: Image) {
         Some(Image::empty("Output", width, height));
 }
 
-fn process_bundle(host: &OfxHost, bundle: &Bundle) -> Result<(), Box<dyn Error>> {
-    let lib = bundle.load()?;
-    let plugins = get_plugins(&lib)?;
-
-    println!("{}, => {}", bundle.path.display(), plugins.len());
-    for p in plugins {
-        (p.set_host)(host);
-        println!("{:?}", p);
-        println!(
-            " load: {:?}",
-            p.call_action(
-                OfxActionLoad,
-                OfxImageEffectHandle::from(std::ptr::null_mut()),
-                OfxPropertySetHandle::from(std::ptr::null_mut()),
-                OfxPropertySetHandle::from(std::ptr::null_mut()),
-            )
-        );
-
-        // Overall descriptor for the plugin
-        let effect: Object<ImageEffect> = Default::default();
-        println!(
-            " describe: {:?}",
-            p.call_action(
-                OfxActionDescribe,
-                effect.clone().into(),
-                OfxPropertySetHandle::from(std::ptr::null_mut()),
-                OfxPropertySetHandle::from(std::ptr::null_mut()),
-            )
-        );
-
-        assert!(effect
-            .get()
-            .properties
-            .get()
-            .values
-            .get(OfxImageEffectPropSupportedContexts)
-            .map(|p| p.0.contains(&OfxImageEffectContextFilter.into()))
-            .unwrap_or(false));
-        assert!(effect
-            .get()
-            .properties
-            .get()
-            .values
-            .get(OfxImageEffectPropSupportedPixelDepths)
-            .map(|p| p.0.contains(&OfxBitDepthFloat.into()))
-            .unwrap_or(false));
-
-        // Descriptor for the plugin in Filter context
-        let filter = ImageEffect {
-            properties: PropertySet::new(
-                "filter",
-                [(OfxPluginPropFilePath, bundle.path.to_str().unwrap().into())],
-            )
-            .into_object(),
-            ..Default::default()
-        }
-        .into_object();
-
-        let filter_inargs = PropertySet::new(
-            "filter_inargs",
-            [(
-                OfxImageEffectPropContext,
-                OfxImageEffectContextFilter.into(),
-            )],
-        )
-        .into_object();
-
-        println!(
-            " describe filter: {:?}",
-            p.call_action(
-                OfxImageEffectActionDescribeInContext,
-                filter.clone().into(),
-                OfxPropertySetHandle::from(filter_inargs.clone()),
-                OfxPropertySetHandle::from(std::ptr::null_mut()),
-            )
-        );
-
-        // Instance of the filter. Both instances and descriptors are
-        // ImageEffect objects.
-        let filter_instance: Object<ImageEffect> =
-            create_instance(&filter.get(), OfxImageEffectContextFilter).into_object();
-
-        println!(
-            " create instance: {:?}",
-            p.call_action(
-                OfxActionCreateInstance,
-                filter_instance.clone().into(),
-                OfxPropertySetHandle::from(std::ptr::null_mut()),
-                OfxPropertySetHandle::from(std::ptr::null_mut()),
-            )
-        );
-
-        let input = read_exr("input", "in.exr")?;
-        let width = input.width;
-        let height = input.height;
-
-        create_images(&mut filter_instance.get(), input);
-
-        let render_inargs = PropertySet::new(
-            "render_inargs",
-            [
-                (OfxPropTime, (0.0).into()),
-                (OfxImageEffectPropFieldToRender, OfxImageFieldNone.into()),
-                (OfxImageEffectPropRenderWindow, [0, 0, width, height].into()),
-                (OfxImageEffectPropRenderScale, [1.0, 1.0].into()),
-                (OfxImageEffectPropSequentialRenderStatus, false.into()),
-                (OfxImageEffectPropInteractiveRenderStatus, false.into()),
-                (OfxImageEffectPropRenderQualityDraft, false.into()),
-            ],
-        )
-        .into_object();
-
-        let render_stat = p.call_action(
-            OfxImageEffectActionRender,
-            filter_instance.clone().into(),
-            OfxPropertySetHandle::from(render_inargs.clone()),
-            OfxPropertySetHandle::from(std::ptr::null_mut()),
-        );
-
-        println!(" render: {:?}", render_stat);
-        if render_stat == OfxStatus::OK {
-            write_exr(
-                "out.exr",
-                filter_instance
-                    .get()
-                    .clips
-                    .get("Output")
-                    .unwrap()
-                    .get()
-                    .image
-                    .as_ref()
-                    .unwrap()
-                    .clone(),
-            )?;
-        }
-
-        println!(
-            " destroy instance: {:?}",
-            p.call_action(
-                OfxActionDestroyInstance,
-                filter_instance.clone().into(),
-                OfxPropertySetHandle::from(std::ptr::null_mut()),
-                OfxPropertySetHandle::from(std::ptr::null_mut()),
-            )
-        );
-
-        println!(
-            " unload: {:?}",
-            p.call_action(
-                OfxActionUnload,
-                OfxImageEffectHandle::from(std::ptr::null_mut()),
-                OfxPropertySetHandle::from(std::ptr::null_mut()),
-                OfxPropertySetHandle::from(std::ptr::null_mut()),
-            )
-        );
-
-        // println!(" effect: {:?}", effect);
-        // println!(" filter: {:?}", filter);
-        // println!(" instance: {:?}", filter_instance);
-    }
-    println!();
-    Ok(())
-}
-
 fn read_exr(name: &str, path: &str) -> Result<Image, Box<dyn Error>> {
     let mut file = RgbaInputFile::new(path, 1)?;
     // Note that windows in OpenEXR are ***inclusive*** bounds, so a
@@ -1079,7 +904,255 @@ fn write_exr(filename: &str, image: Image) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+struct LoadedPlugin {
+    bundle: Bundle,
+    plugin: Plugin,
+    descriptor: Object<ImageEffect>,
+}
+
+struct Instance {
+    plugin_name: String,
+    effect: Object<ImageEffect>,
+}
+
+struct CommandContext<'a> {
+    host: &'a OfxHost,
+    plugins: HashMap<String, LoadedPlugin>,
+    instances: HashMap<String, Instance>,
+}
+
+impl<'a> CommandContext<'a> {
+    fn get_plugin(&self, name: &str) -> Result<&LoadedPlugin, GenericError> {
+        self.plugins
+            .get(name)
+            .ok_or(format!("Plugin {} not loaded", name).as_str().into())
+    }
+
+    fn get_instance(&self, name: &str) -> Result<&Instance, GenericError> {
+        self.instances
+            .get(name)
+            .ok_or(format!("No instance named {}", name).as_str().into())
+    }
+}
+
+fn create_plugin(
+    bundle_name: &str,
+    plugin_name: &str,
+    context: &mut CommandContext,
+) -> Result<(), Box<dyn Error>> {
+    let path = format!("/usr/OFX/Plugins/{}.ofx.bundle", bundle_name);
+    let bundle = Bundle::new(path.into()).map_err(|e| GenericError {
+        message: format!("Error loading bundle {}", bundle_name),
+        source: e,
+    })?;
+    let lib = bundle.load()?;
+    let plugin = get_plugins(&lib)?
+        .into_iter()
+        .find(|p| p.plugin_identifier == plugin_name)
+        .ok_or(format!("Plugin {} not found in bundle", plugin_name))?;
+    (plugin.set_host)(context.host);
+    plugin.try_call_action(
+        OfxActionLoad,
+        OfxImageEffectHandle::from(std::ptr::null_mut()),
+        OfxPropertySetHandle::from(std::ptr::null_mut()),
+        OfxPropertySetHandle::from(std::ptr::null_mut()),
+    )?;
+
+    let descriptor: Object<ImageEffect> = Default::default();
+    plugin.try_call_action(
+        OfxActionDescribe,
+        descriptor.clone().into(),
+        OfxPropertySetHandle::from(std::ptr::null_mut()),
+        OfxPropertySetHandle::from(std::ptr::null_mut()),
+    )?;
+
+    context.plugins.insert(
+        plugin_name.to_string(),
+        LoadedPlugin {
+            bundle,
+            plugin,
+            descriptor,
+        },
+    );
+    Ok(())
+}
+
+fn create_filter(
+    plugin_name: &str,
+    instance_name: &str,
+    context: &mut CommandContext,
+) -> Result<(), Box<dyn Error>> {
+    let effect = {
+        let plugin = context.get_plugin(plugin_name)?;
+        let descriptor = plugin.descriptor.get();
+        let values = &descriptor.properties.get().values;
+        if !values
+            .get(OfxImageEffectPropSupportedContexts)
+            .map(|p| p.0.contains(&OfxImageEffectContextFilter.into()))
+            .unwrap_or(false)
+        {
+            return Err("Filter context not supported".into());
+        }
+        if !values
+            .get(OfxImageEffectPropSupportedPixelDepths)
+            .map(|p| p.0.contains(&OfxBitDepthFloat.into()))
+            .unwrap_or(false)
+        {
+            return Err("OfxBitDepthFloat not supported".into());
+        }
+
+        // Descriptor for the plugin in Filter context
+        let filter = ImageEffect {
+            properties: PropertySet::new(
+                "filter",
+                [(
+                    OfxPluginPropFilePath,
+                    plugin.bundle.path.to_str().unwrap().into(),
+                )],
+            )
+            .into_object(),
+            ..Default::default()
+        }
+        .into_object();
+
+        let filter_inargs = PropertySet::new(
+            "filter_inargs",
+            [(
+                OfxImageEffectPropContext,
+                OfxImageEffectContextFilter.into(),
+            )],
+        )
+        .into_object();
+        #[allow(clippy::redundant_clone)]
+        plugin.plugin.try_call_action(
+            OfxImageEffectActionDescribeInContext,
+            filter.clone().into(),
+            OfxPropertySetHandle::from(filter_inargs.clone()),
+            OfxPropertySetHandle::from(std::ptr::null_mut()),
+        )?;
+
+        // Instance of the filter. Both instances and descriptors are
+        // ImageEffect objects.
+        let filter_instance: Object<ImageEffect> =
+            create_instance(&filter.get(), OfxImageEffectContextFilter).into_object();
+
+        plugin.plugin.try_call_action(
+            OfxActionCreateInstance,
+            filter_instance.clone().into(),
+            OfxPropertySetHandle::from(std::ptr::null_mut()),
+            OfxPropertySetHandle::from(std::ptr::null_mut()),
+        )?;
+        filter_instance
+    };
+    context.instances.insert(
+        instance_name.to_string(),
+        Instance {
+            plugin_name: plugin_name.to_string(),
+            effect,
+        },
+    );
+    Ok(())
+}
+
+fn render_filter(
+    instance_name: &str,
+    input_file: &str,
+    output_file: &str,
+    context: &mut CommandContext,
+) -> Result<(), Box<dyn Error>> {
+    let instance = context.get_instance(instance_name)?;
+    let plugin = context.get_plugin(&instance.plugin_name)?;
+    let input = read_exr("input", input_file)?;
+    let width = input.width;
+    let height = input.height;
+
+    create_images(&mut instance.effect.get(), input);
+    let render_inargs = PropertySet::new(
+        "render_inargs",
+        [
+            (OfxPropTime, (0.0).into()),
+            (OfxImageEffectPropFieldToRender, OfxImageFieldNone.into()),
+            (OfxImageEffectPropRenderWindow, [0, 0, width, height].into()),
+            (OfxImageEffectPropRenderScale, [1.0, 1.0].into()),
+            (OfxImageEffectPropSequentialRenderStatus, false.into()),
+            (OfxImageEffectPropInteractiveRenderStatus, false.into()),
+            (OfxImageEffectPropRenderQualityDraft, false.into()),
+        ],
+    )
+    .into_object();
+
+    #[allow(clippy::redundant_clone)]
+    plugin.plugin.try_call_action(
+        OfxImageEffectActionRender,
+        instance.effect.clone().into(),
+        OfxPropertySetHandle::from(render_inargs.clone()),
+        OfxPropertySetHandle::from(std::ptr::null_mut()),
+    )?;
+    write_exr(
+        output_file,
+        instance
+            .effect
+            .get()
+            .clips
+            .get("Output")
+            .unwrap()
+            .get()
+            .image
+            .as_ref()
+            .unwrap()
+            .clone(),
+    )?;
+    Ok(())
+}
+fn process_command(
+    command: &Command,
+    context: &mut CommandContext,
+) -> Result<(), Box<dyn Error>> {
+    use commands::Command::*;
+
+    match command {
+        CreatePlugin {
+            bundle_name,
+            plugin_name,
+        } => create_plugin(bundle_name, plugin_name, context),
+        CreateFilter {
+            plugin_name,
+            instance_name,
+        } => create_filter(plugin_name, instance_name, context),
+        RenderFilter {
+            instance_name,
+            input_file,
+            output_file,
+        } => render_filter(instance_name, input_file, output_file, context),
+        DestroyInstance { instance_name } => {
+            let instance = context.get_instance(instance_name)?;
+            let plugin = context.get_plugin(&instance.plugin_name)?;
+            plugin.plugin.try_call_action(
+                OfxActionDestroyInstance,
+                instance.effect.clone().into(),
+                OfxPropertySetHandle::from(std::ptr::null_mut()),
+                OfxPropertySetHandle::from(std::ptr::null_mut()),
+            )?;
+            context.instances.remove(instance_name);
+            Ok(())
+        }
+        UnloadPlugin { plugin_name } => {
+            let plugin = context.get_plugin(plugin_name)?;
+            plugin.plugin.try_call_action(
+                OfxActionUnload,
+                OfxImageEffectHandle::from(std::ptr::null_mut()),
+                OfxPropertySetHandle::from(std::ptr::null_mut()),
+                OfxPropertySetHandle::from(std::ptr::null_mut()),
+            )?;
+            context.plugins.remove(plugin_name);
+            Ok(())
+        }
+    }
+}
+
 fn main() {
+    let args: Vec<String> = env::args().collect();
+
     const VERSION_NAME: &str = env!("CARGO_PKG_VERSION");
     let version: Vec<_> = VERSION_NAME
         .split('.')
@@ -1143,9 +1216,43 @@ fn main() {
         fetchSuite: fetch_suite,
     };
 
-    for bundle in ofx_bundles() {
-        if let Err(e) = process_bundle(&host, &bundle) {
-            println!("Error processing bundle {}: {}", bundle.path.display(), e);
+    let mut context = CommandContext {
+        host: &host,
+        plugins: HashMap::new(),
+        instances: HashMap::new(),
+    };
+
+    let bundle = &args[1];
+    let plugin = &args[2];
+    let input = &args[3];
+    let output = &args[4];
+
+    let commands = vec![
+        Command::CreatePlugin {
+            bundle_name: bundle.to_string(),
+            plugin_name: plugin.to_string(),
+        },
+        Command::CreateFilter {
+            plugin_name: plugin.to_string(),
+            instance_name: "myinstance".to_string(),
+        },
+        Command::RenderFilter {
+            instance_name: "myinstance".to_string(),
+            input_file: input.to_string(),
+            output_file: output.to_string(),
+        },
+        Command::DestroyInstance {
+            instance_name: "myinstance".to_string(),
+        },
+        Command::UnloadPlugin {
+            plugin_name: plugin.to_string(),
+        },
+    ];
+
+    for ref c in commands {
+        if let Err(e) = process_command(c, &mut context) {
+            println!("Error running command: {}", e);
+            break;
         }
     }
 }
