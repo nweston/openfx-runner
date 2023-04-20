@@ -110,12 +110,12 @@ trait Handle: Sized + Eq + std::hash::Hash + std::fmt::Debug + 'static {
     /// object (these are errors in the plugin and if they occur we
     /// can't reasonably recover, so it's best to fail immediately
     /// with the option of backtrace).
-    fn as_arc(self) -> Object<Self::Object> {
+    fn as_arc(&self) -> Object<Self::Object> {
         if let Some(weak) = Self::handle_manager()
             .lock()
             .unwrap()
             .handle_to_ptr
-            .get(&self)
+            .get(self)
         {
             Object(weak.upgrade().unwrap_or_else(|| {
                 panic!(
@@ -214,8 +214,8 @@ enum ParamValue {
     Page,
     ParamValueParametric,
     PushButton,
-    RGB { r: f64, g: f64, b: f64 },
-    RGBA,
+    Rgb { r: f64, g: f64, b: f64 },
+    Rgba,
     StrChoice,
     String(String),
 }
@@ -659,16 +659,15 @@ impl PropertySet {
         self.get(key, index).ok().map(|v| v.clone().into())
     }
 
-    fn set(&mut self, key: &str, index: usize, value: PropertyValue) -> () {
+    fn set(&mut self, key: &str, index: usize, value: PropertyValue) {
         let prop = self
             .values
             .entry(key.to_string())
             .or_insert(Default::default());
-        let uindex = index as usize;
-        if uindex >= prop.0.len() {
-            prop.0.resize_with(uindex + 1, || PropertyValue::Unset)
+        if index >= prop.0.len() {
+            prop.0.resize_with(index + 1, || PropertyValue::Unset)
         }
-        prop.0[uindex] = value;
+        prop.0[index] = value;
     }
 }
 
@@ -688,7 +687,7 @@ impl Bundle {
     fn new(path: std::path::PathBuf) -> Result<Self, Box<dyn Error>> {
         let file = plist_path(&path);
         let plist = plist::Value::from_file(file.clone()).map_err(|e| GenericError {
-            message: format!("Failed reading plist \"{}\"", file.display()).into(),
+            message: format!("Failed reading plist \"{}\"", file.display()),
             source: e.into(),
         })?;
         Ok(Self { path, plist })
@@ -814,9 +813,7 @@ where
         .collect()
 }
 
-fn create_params(
-    descriptors: &Vec<Object<PropertySet>>,
-) -> HashMap<String, Object<Param>> {
+fn create_params(descriptors: &[Object<PropertySet>]) -> HashMap<String, Object<Param>> {
     descriptors
         .iter()
         .map(|d| {
@@ -853,7 +850,7 @@ fn create_instance(descriptor: &ImageEffect, context: &str) -> ImageEffect {
     let param_set = ParamSet {
         properties: Default::default(),
         descriptors: descriptors.clone(),
-        params: create_params(&descriptors),
+        params: create_params(descriptors),
     }
     .into_object();
     ImageEffect {
@@ -863,7 +860,7 @@ fn create_instance(descriptor: &ImageEffect, context: &str) -> ImageEffect {
     }
 }
 
-fn create_images(effect: &mut ImageEffect, input: Image) -> () {
+fn create_images(effect: &mut ImageEffect, input: Image) {
     let width = input.width;
     let height = input.height;
     let project_dims: Property = [(width as f64), (height as f64)].into();
@@ -1137,6 +1134,10 @@ fn main() {
         ],
     )
     .into_object();
+    // Clippy complains here, but we need to keep the original
+    // host_props alive or it will be deallocated while a handle to it
+    // still exists.
+    #[allow(clippy::redundant_clone)]
     let host = OfxHost {
         host: host_props.clone().into(),
         fetchSuite: fetch_suite,

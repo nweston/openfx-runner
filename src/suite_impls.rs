@@ -528,7 +528,7 @@ pub extern "C" fn param_value_count(paramHandle: OfxParamHandle) -> c_int {
     use ParamValue::*;
     paramHandle.with_object(|p| match p.value {
         Double2D | Integer2D => 2,
-        RGB { .. } | Double3D | Integer3D => 3,
+        Rgb { .. } | Double3D | Integer3D => 3,
         _ => 1,
     })
 }
@@ -568,7 +568,7 @@ pub extern "C" fn param_get_value_3(
 ) -> OfxStatus {
     use ParamValue::*;
     paramHandle.with_object(|p| match p.value {
-        RGB { r, g, b } => unsafe {
+        Rgb { r, g, b } => unsafe {
             *(value1 as *mut c_double) = r;
             *(value2 as *mut c_double) = g;
             *(value3 as *mut c_double) = b;
