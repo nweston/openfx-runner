@@ -1,3 +1,8 @@
+use crate::ParamValue;
+use serde::Deserialize;
+
+#[derive(Deserialize)]
+#[serde(tag = "type")]
 pub enum Command {
     /// Load a bundle, find and describe a plugin.
     /// Calls Load and Describe actions

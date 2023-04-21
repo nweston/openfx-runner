@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::env;
 use std::error::Error;
 use std::ffi::{c_char, c_int, c_void, CStr, CString};
+use std::fs;
 use std::string::String;
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 
@@ -1150,9 +1151,21 @@ fn process_command(
     }
 }
 
-fn main() {
-    let args: Vec<String> = env::args().collect();
+fn read_commands(path: &str) -> Result<Vec<Command>, GenericError> {
+    fs::read_to_string(path)
+        .map_err(|e| GenericError {
+            message: format!("Failed reading file {}", path),
+            source: e.into(),
+        })
+        .and_then(|s| {
+            serde_json::from_str(&s).map_err(|e| GenericError {
+                message: "Error parsing JSON".to_string(),
+                source: e.into(),
+            })
+        })
+}
 
+fn main() {
     const VERSION_NAME: &str = env!("CARGO_PKG_VERSION");
     let version: Vec<_> = VERSION_NAME
         .split('.')
@@ -1222,39 +1235,22 @@ fn main() {
         instances: HashMap::new(),
     };
 
-    let bundle = &args[1];
-    let plugin = &args[2];
-    let input = &args[3];
-    let output = &args[4];
+    let args: Vec<String> = env::args().collect();
+    let input = &args[1];
 
-    let commands = vec![
-        Command::CreatePlugin {
-            bundle_name: bundle.to_string(),
-            plugin_name: plugin.to_string(),
-        },
-        Command::CreateFilter {
-            plugin_name: plugin.to_string(),
-            instance_name: "myinstance".to_string(),
-        },
-        Command::RenderFilter {
-            instance_name: "myinstance".to_string(),
-            input_file: input.to_string(),
-            output_file: output.to_string(),
-        },
-        Command::DestroyInstance {
-            instance_name: "myinstance".to_string(),
-        },
-        Command::UnloadPlugin {
-            plugin_name: plugin.to_string(),
-        },
-    ];
-
-    for ref c in commands {
-        if let Err(e) = process_command(c, &mut context) {
-            println!("Error running command: {}", e);
-            break;
+    match read_commands(input) {
+        Ok(commands) => {
+            for ref c in commands {
+                if let Err(e) = process_command(c, &mut context) {
+                    println!("Error running command: {}", e);
+                    break;
+                }
+            }
         }
-    }
+        Err(e) => {
+            println!("{}", e);
+        }
+    };
 }
 
 #[cfg(test)]
