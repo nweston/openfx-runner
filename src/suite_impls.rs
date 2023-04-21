@@ -541,7 +541,7 @@ pub extern "C" fn param_get_value_1(
     use ParamValue::*;
     paramHandle.with_object(|p| match p.value {
         Boolean(b) => unsafe { *(value as *mut c_int) = if b { 1 } else { 0 } },
-        Choice { index, .. } => unsafe { *(value as *mut c_int) = index as c_int },
+        Choice(index) => unsafe { *(value as *mut c_int) = index as c_int },
         Double(v) => unsafe { *(value as *mut c_double) = v },
         Integer(v) => unsafe { *(value as *mut c_int) = v },
         _ => panic!("not implemented"),

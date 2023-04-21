@@ -1,7 +1,7 @@
 use crate::ParamValue;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(tag = "type")]
 pub enum Command {
     /// Load a bundle, find and describe a plugin.
@@ -26,4 +26,11 @@ pub enum Command {
     DestroyInstance { instance_name: String },
     /// Unload a plugin/bundle.
     UnloadPlugin { plugin_name: String },
+    /// Set parameter values on an instance. Optionally call
+    /// BeginInstanceChanged, InstanceChanged, and EndInstanceChanged.
+    SetParams {
+        instance_name: String,
+        values: Vec<(String, ParamValue)>,
+        call_instance_changed: bool,
+    },
 }

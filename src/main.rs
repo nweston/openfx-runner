@@ -1,4 +1,5 @@
 use once_cell::sync::Lazy;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env;
 use std::error::Error;
@@ -201,11 +202,11 @@ impl From<&str> for GenericError {
     }
 }
 
-#[derive(Debug)]
-#[allow(dead_code)]
-enum ParamValue {
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "type", content = "v")]
+pub enum ParamValue {
     Boolean(bool),
-    Choice { options: Vec<String>, index: usize },
+    Choice(usize),
     Custom,
     Double(f64),
     Double2D,
@@ -247,11 +248,9 @@ impl ParamValue {
                     .get_type::<String>(OfxParamPropDefault, 0)
                     .unwrap_or("".into()),
             ),
-            OfxParamTypeChoice => Self::Choice {
-                options: Vec::new(),
-                index: props.get_type::<i32>(OfxParamPropDefault, 0).unwrap_or(0)
-                    as usize,
-            },
+            OfxParamTypeChoice => Self::Choice(
+                props.get_type::<i32>(OfxParamPropDefault, 0).unwrap_or(0) as usize,
+            ),
             OfxParamTypePushButton => Self::PushButton,
             OfxParamTypePage => Self::Page,
             OfxParamTypeGroup => Self::Group,
@@ -438,6 +437,10 @@ impl ImageEffect {
             .into_object(),
         );
         self.clips.get(name).unwrap().clone()
+    }
+
+    fn get_param(&self, name: &str) -> Option<Object<Param>> {
+        self.param_set.get().params.get(name).cloned()
     }
 }
 
@@ -1105,6 +1108,72 @@ fn render_filter(
     )?;
     Ok(())
 }
+
+fn set_params(
+    instance_name: &str,
+    values: &[(String, ParamValue)],
+    call_instance_changed: bool,
+    context: &mut CommandContext,
+) -> Result<(), Box<dyn Error>> {
+    let instance = context.get_instance(instance_name)?;
+    let plugin = context.get_plugin(&instance.plugin_name)?;
+
+    let inargs1 = PropertySet::new(
+        "begin_instance_changed",
+        [(OfxPropChangeReason, OfxChangeUserEdited.into())],
+    )
+    .into_object();
+
+    if call_instance_changed {
+        plugin.plugin.try_call_action(
+            OfxActionBeginInstanceChanged,
+            instance.effect.clone().into(),
+            inargs1.clone().into(),
+            OfxPropertySetHandle::from(std::ptr::null_mut()),
+        )?;
+    }
+
+    for (name, val) in values.iter() {
+        let param = instance
+            .effect
+            .get()
+            .get_param(name)
+            .ok_or(format!("No such param: {}", name))?;
+        param.get().value = val.clone();
+
+        if call_instance_changed {
+            let inargs2 = PropertySet::new(
+                "instance_changed",
+                [
+                    (OfxPropType, OfxTypeParameter.into()),
+                    (OfxPropName, name.as_str().into()),
+                    (OfxPropChangeReason, OfxChangeUserEdited.into()),
+                    (OfxPropTime, (0.0).into()),
+                    (OfxImageEffectPropRenderScale, [1.0, 1.0].into()),
+                ],
+            )
+            .into_object();
+            plugin.plugin.try_call_action(
+                OfxActionInstanceChanged,
+                instance.effect.clone().into(),
+                inargs2.clone().into(),
+                OfxPropertySetHandle::from(std::ptr::null_mut()),
+            )?;
+        }
+    }
+
+    if call_instance_changed {
+        plugin.plugin.try_call_action(
+            OfxActionEndInstanceChanged,
+            instance.effect.clone().into(),
+            inargs1.clone().into(),
+            OfxPropertySetHandle::from(std::ptr::null_mut()),
+        )?;
+    }
+
+    Ok(())
+}
+
 fn process_command(
     command: &Command,
     context: &mut CommandContext,
@@ -1148,6 +1217,11 @@ fn process_command(
             context.plugins.remove(plugin_name);
             Ok(())
         }
+        SetParams {
+            instance_name,
+            values,
+            call_instance_changed,
+        } => set_params(instance_name, values, *call_instance_changed, context),
     }
 }
 
