@@ -198,10 +198,12 @@ pub struct OfxParameterSuiteV1 {
         time1: OfxTime,
         time2: OfxTime,
     ) -> OfxStatus,
-    pub paramSetValue: extern "C" fn(paramHandle: OfxParamHandle) -> OfxStatus,
-    pub paramSetValueAtTime: extern "C" fn(
+    pub paramSetValue:
+        unsafe extern "C" fn(paramHandle: OfxParamHandle, ...) -> OfxStatus,
+    pub paramSetValueAtTime: unsafe extern "C" fn(
         paramHandle: OfxParamHandle,
         time: OfxTime, // time in frames
+        ...
     ) -> OfxStatus,
     pub paramGetNumKeys: extern "C" fn(
         paramHandle: OfxParamHandle,

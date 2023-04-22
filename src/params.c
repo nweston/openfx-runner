@@ -1,10 +1,17 @@
 #include <assert.h>
 #include <stdarg.h>
+#include <string.h>
 
 int param_value_count(void *);
 int param_get_value_1(void *handle, void *value);
 int param_get_value_2(void *handle, void *value1, void *value2);
 int param_get_value_3(void *handle, void *value1, void *value2, void *value3);
+const char *param_get_type(void *handle);
+void param_set_value_boolean(void *handle, int value);
+void param_set_value_integer(void *handle, int value);
+void param_set_value_choice(void *handle, int value);
+void param_set_value_double(void *handle, double value);
+void param_set_value_string(void *handle, const char *value);
 
 int paramGetValue (void *paramHandle, ...) {
   int count = param_value_count(paramHandle);
@@ -52,8 +59,49 @@ int paramGetValueAtTime (void *paramHandle, double time, ...) {
     break;
   case 3:
     return param_get_value_3(paramHandle, vals[0], vals[1], vals[2]);
-    break;
   default:
     return 1;                   /* OfxStatus::Failed */
   }
+}
+
+int paramSetValue(void *paramHandle, ...) {
+  va_list ap;
+  va_start (ap, paramHandle);
+  const char *type = param_get_type(paramHandle);
+  if (!strcmp(type, "OfxParamTypeBoolean")) {
+    param_set_value_boolean(paramHandle, va_arg(ap, int));
+  } else if (!strcmp(type, "OfxParamTypeInteger")) {
+    param_set_value_integer(paramHandle, va_arg(ap, int));
+  } else if (!strcmp(type, "OfxParamTypeDouble")) {
+    param_set_value_double(paramHandle, va_arg(ap, double));
+  } else if (!strcmp(type, "OfxParamTypeString")) {
+    param_set_value_string(paramHandle, va_arg(ap, char*));
+  } else if (!strcmp(type, "OfxParamTypeChoice")) {
+    param_set_value_choice(paramHandle, va_arg(ap, int));
+  } else {
+    return 1;                   /* OfxStatus::Failed */
+  }
+
+  return 0;
+}
+
+int paramSetValueAtTime(void *paramHandle, double time, ...) {
+  va_list ap;
+  va_start (ap, time);
+  const char *type = param_get_type(paramHandle);
+  if (!strcmp(type, "OfxParamTypeBoolean")) {
+    param_set_value_boolean(paramHandle, va_arg(ap, int));
+  } else if (!strcmp(type, "OfxParamTypeInteger")) {
+    param_set_value_integer(paramHandle, va_arg(ap, int));
+  } else if (!strcmp(type, "OfxParamTypeDouble")) {
+    param_set_value_double(paramHandle, va_arg(ap, double));
+  } else if (!strcmp(type, "OfxParamTypeString")) {
+    param_set_value_string(paramHandle, va_arg(ap, char*));
+  } else if (!strcmp(type, "OfxParamTypeChoice")) {
+    param_set_value_choice(paramHandle, va_arg(ap, int));
+  } else {
+    return 1;                   /* OfxStatus::Failed */
+  }
+
+  return 0;
 }

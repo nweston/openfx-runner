@@ -521,6 +521,8 @@ extern "C" fn paramGetPropertySet(
 extern "C" {
     fn paramGetValue(paramHandle: OfxParamHandle, ...) -> OfxStatus;
     fn paramGetValueAtTime(paramHandle: OfxParamHandle, time: OfxTime, ...) -> OfxStatus;
+    fn paramSetValue(paramHandle: OfxParamHandle, ...) -> OfxStatus;
+    fn paramSetValueAtTime(paramHandle: OfxParamHandle, time: OfxTime, ...) -> OfxStatus;
 }
 
 #[no_mangle]
@@ -578,6 +580,46 @@ pub extern "C" fn param_get_value_3(
     OfxStatus::OK
 }
 
+#[no_mangle]
+pub extern "C" fn param_get_type(handle: OfxParamHandle) -> *const c_char {
+    handle.with_object(|p| {
+        if let Ok(PropertyValue::String(s)) = p
+            .properties
+            .get()
+            .get(crate::constants::param::OfxParamPropType, 0)
+        {
+            s.as_c_str().as_ptr()
+        } else {
+            panic!("OfxParamPropType not found on param")
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn param_set_value_boolean(handle: OfxParamHandle, value: i32) {
+    handle.with_object(|p| p.value = ParamValue::Boolean(value != 0));
+}
+
+#[no_mangle]
+pub extern "C" fn param_set_value_integer(handle: OfxParamHandle, value: i32) {
+    handle.with_object(|p| p.value = ParamValue::Integer(value));
+}
+
+#[no_mangle]
+pub extern "C" fn param_set_value_choice(handle: OfxParamHandle, value: i32) {
+    handle.with_object(|p| p.value = ParamValue::Choice(value as usize));
+}
+
+#[no_mangle]
+pub extern "C" fn param_set_value_double(handle: OfxParamHandle, value: f64) {
+    handle.with_object(|p| p.value = ParamValue::Double(value));
+}
+
+#[no_mangle]
+pub extern "C" fn param_set_value_string(handle: OfxParamHandle, value: *const c_char) {
+    handle.with_object(|p| p.value = ParamValue::String(cstr_to_string(value)));
+}
+
 #[allow(unused_variables)]
 extern "C" fn paramGetDerivative(
     paramHandle: OfxParamHandle,
@@ -591,19 +633,6 @@ extern "C" fn paramGetIntegral(
     paramHandle: OfxParamHandle,
     time1: OfxTime,
     time2: OfxTime,
-) -> OfxStatus {
-    panic!("Not implemented!")
-}
-
-#[allow(unused_variables)]
-extern "C" fn paramSetValue(paramHandle: OfxParamHandle) -> OfxStatus {
-    panic!("Not implemented!")
-}
-
-#[allow(unused_variables)]
-extern "C" fn paramSetValueAtTime(
-    paramHandle: OfxParamHandle,
-    time: OfxTime, // time in frames
 ) -> OfxStatus {
     panic!("Not implemented!")
 }
@@ -637,12 +666,12 @@ extern "C" fn paramGetKeyIndex(
 
 #[allow(unused_variables)]
 extern "C" fn paramDeleteKey(paramHandle: OfxParamHandle, time: OfxTime) -> OfxStatus {
-    panic!("Not implemented!")
+    OfxStatus::OK
 }
 
 #[allow(unused_variables)]
 extern "C" fn paramDeleteAllKeys(paramHandle: OfxParamHandle) -> OfxStatus {
-    panic!("Not implemented!")
+    OfxStatus::OK
 }
 
 #[allow(unused_variables)]
@@ -660,12 +689,12 @@ extern "C" fn paramEditBegin(
     paramSet: OfxParamSetHandle,
     name: *const c_char,
 ) -> OfxStatus {
-    panic!("Not implemented!")
+    OfxStatus::OK
 }
 
 #[allow(unused_variables)]
 extern "C" fn paramEditEnd(paramSet: OfxParamSetHandle) -> OfxStatus {
-    panic!("Not implemented!")
+    OfxStatus::OK
 }
 
 pub const PARAMETER_SUITE: OfxParameterSuiteV1 = OfxParameterSuiteV1 {
