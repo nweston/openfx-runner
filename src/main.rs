@@ -214,6 +214,13 @@ struct OfxError {
 }
 
 impl OfxError {
+    fn ok() -> Self {
+        Self {
+            message: "".to_string(),
+            status: OfxStatus::OK,
+        }
+    }
+
     /// Return the OFX status code. If it's an error
     fn get_status(&self, error_message_prefix: &str) -> OfxStatus {
         if self.status.failed() {

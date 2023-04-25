@@ -283,12 +283,24 @@ fn get_property<T: FromProperty>(
     });
 
     match r {
-        Ok(_) => OfxError {
-            message: "".to_string(),
-            status: OfxStatus::OK,
-        },
+        Ok(_) => OfxError::ok(),
         Err(e) => e,
     }
+}
+
+fn get_property_array<T: FromProperty>(
+    value: *mut T,
+    props: &PropertySet,
+    key: &str,
+    count: usize,
+) -> OfxError {
+    for i in 0..count {
+        let result = get_property(unsafe { value.offset(i as isize) }, props, key, i);
+        if result.status.failed() {
+            return result;
+        }
+    }
+    OfxError::ok()
 }
 
 extern "C" fn propGetPointer(
@@ -346,7 +358,10 @@ extern "C" fn propGetPointerN(
     count: c_int,
     value: *mut *const c_void,
 ) -> OfxStatus {
-    panic!("Not implemented!");
+    properties.with_object(|props| {
+        get_property_array(value, props, &cstr_to_string(property), count as usize)
+            .get_status("propGetPointerN: ")
+    })
 }
 
 #[allow(unused_variables)]
@@ -356,7 +371,10 @@ extern "C" fn propGetStringN(
     count: c_int,
     value: *mut *const c_char,
 ) -> OfxStatus {
-    panic!("Not implemented!");
+    properties.with_object(|props| {
+        get_property_array(value, props, &cstr_to_string(property), count as usize)
+            .get_status("propGetStringN: ")
+    })
 }
 
 #[allow(unused_variables)]
@@ -366,7 +384,10 @@ extern "C" fn propGetDoubleN(
     count: c_int,
     value: *mut c_double,
 ) -> OfxStatus {
-    panic!("Not implemented!");
+    properties.with_object(|props| {
+        get_property_array(value, props, &cstr_to_string(property), count as usize)
+            .get_status("propGetDoubleN: ")
+    })
 }
 
 #[allow(unused_variables)]
@@ -376,7 +397,10 @@ extern "C" fn propGetIntN(
     count: c_int,
     value: *mut c_int,
 ) -> OfxStatus {
-    panic!("Not implemented!");
+    properties.with_object(|props| {
+        get_property_array(value, props, &cstr_to_string(property), count as usize)
+            .get_status("propGetIntN: ")
+    })
 }
 
 #[allow(unused_variables)]
