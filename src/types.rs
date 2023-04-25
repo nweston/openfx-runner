@@ -33,7 +33,7 @@ handle!(OfxPropertySetHandle);
 
 // TODO: test that i32 and c_int are the same size
 #[repr(i32)]
-#[derive(Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 #[allow(dead_code)]
 pub enum OfxStatus {
     OK = 0,
@@ -54,6 +54,19 @@ pub enum OfxStatus {
     ErrImageFormat = 1000,
     GLOutOfMemory = 1001,
     GLRenderFailed = 1002,
+}
+
+impl OfxStatus {
+    pub fn failed(&self) -> bool {
+        match self {
+            Self::OK | Self::ReplyDefault => false,
+            _ => true,
+        }
+    }
+
+    pub fn succeeded(&self) -> bool {
+        !self.failed()
+    }
 }
 
 pub type OfxTime = c_double;

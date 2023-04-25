@@ -494,7 +494,7 @@ impl Plugin {
         out_args: OfxPropertySetHandle,
     ) -> Result<(), GenericError> {
         let stat = self.call_action(action, handle, in_args, out_args);
-        if stat == OfxStatus::OK || stat == OfxStatus::ReplyDefault {
+        if stat.succeeded() {
             Ok(())
         } else {
             Err(format!("{} failed: {:?}", action, stat).as_str().into())
