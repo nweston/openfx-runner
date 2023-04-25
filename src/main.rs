@@ -202,6 +202,39 @@ impl From<&str> for GenericError {
     }
 }
 
+#[derive(Debug)]
+/// The result of an OFX API call.
+///
+/// We can use this within the Rust code as an Error object, but it
+/// can also represent a successful operation (with
+/// status=OfxStatus::OK or ReplyDefault).
+struct OfxError {
+    message: String,
+    status: OfxStatus,
+}
+
+impl OfxError {
+    /// Return the OFX status code. If it's an error
+    fn get_status(&self, error_message_prefix: &str) -> OfxStatus {
+        if self.status.failed() {
+            println!("{}{}", error_message_prefix, self.message);
+        }
+        self.status
+    }
+}
+
+impl std::fmt::Display for OfxError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl Error for OfxError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        None
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "type", content = "v")]
 pub enum ParamValue {
@@ -617,6 +650,46 @@ impl From<PropertyValue> for f64 {
     }
 }
 
+trait FromProperty: Sized {
+    fn from_property(value: &PropertyValue) -> Option<Self>;
+}
+
+impl FromProperty for *const c_void {
+    fn from_property(value: &PropertyValue) -> Option<Self> {
+        match value {
+            PropertyValue::Pointer(Addr(p)) => Some(*p),
+            _ => None,
+        }
+    }
+}
+
+impl FromProperty for *const c_char {
+    fn from_property(value: &PropertyValue) -> Option<Self> {
+        match value {
+            PropertyValue::String(s) => Some(s.as_ptr()),
+            _ => None,
+        }
+    }
+}
+
+impl FromProperty for f64 {
+    fn from_property(value: &PropertyValue) -> Option<Self> {
+        match value {
+            PropertyValue::Double(d) => Some(*d),
+            _ => None,
+        }
+    }
+}
+
+impl FromProperty for i32 {
+    fn from_property(value: &PropertyValue) -> Option<Self> {
+        match value {
+            PropertyValue::Int(i) => Some(*i),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone, Default, Debug)]
 struct Property(Vec<PropertyValue>);
 
@@ -664,14 +737,22 @@ impl PropertySet {
         }
     }
 
-    fn get(&self, key: &str, index: usize) -> Result<&PropertyValue, OfxStatus> {
+    fn get(&self, key: &str, index: usize) -> Result<&PropertyValue, OfxError> {
         self.values
             .get(key)
-            .ok_or_else(|| {
-                println!("Property {} not found on {}", key, self.name);
-                OfxStatus::ErrUnknown
+            .ok_or_else(|| OfxError {
+                message: format!("Property {} not found on {}", key, self.name),
+                status: OfxStatus::ErrUnknown,
             })
-            .and_then(|values| values.0.get(index).ok_or(OfxStatus::ErrBadIndex))
+            .and_then(|values| {
+                values.0.get(index).ok_or(OfxError {
+                    message: format!(
+                        "Property {} bad index {} on {}",
+                        key, index, self.name
+                    ),
+                    status: OfxStatus::ErrBadIndex,
+                })
+            })
     }
 
     /// Get a value and convert to the desired type.
