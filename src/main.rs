@@ -32,7 +32,7 @@ use types::*;
 struct Object<T>(Arc<Mutex<T>>);
 
 impl<T> Object<T> {
-    fn get(&self) -> MutexGuard<'_, T> {
+    fn lock(&self) -> MutexGuard<'_, T> {
         // Locking should never fail since the app is single-threaded
         // for now, so just unwrap.
         self.0.lock().unwrap()
@@ -140,7 +140,7 @@ trait Handle: Sized + Eq + std::hash::Hash + std::fmt::Debug + 'static {
         F: FnOnce(&mut Self::Object) -> T,
     {
         let mutex = self.as_arc();
-        let guard = &mut mutex.get();
+        let guard = &mut mutex.lock();
         callback(guard)
     }
 }
@@ -404,7 +404,7 @@ impl Clone for Clip {
     fn clone(&self) -> Self {
         // Deep copy the properties
         Self {
-            properties: self.properties.get().clone().into_object(),
+            properties: self.properties.lock().clone().into_object(),
             image: self.image.clone(),
         }
     }
@@ -444,7 +444,7 @@ impl ImageEffect {
     }
 
     fn get_param(&self, name: &str) -> Option<Object<Param>> {
-        self.param_set.get().params.get(name).cloned()
+        self.param_set.lock().params.get(name).cloned()
     }
 }
 
@@ -806,7 +806,7 @@ where
     T: Clone + IntoObject,
 {
     h.iter()
-        .map(|(key, val)| (key.clone(), val.get().clone().into_object()))
+        .map(|(key, val)| (key.clone(), val.lock().clone().into_object()))
         .collect()
 }
 
@@ -814,7 +814,7 @@ fn create_params(descriptors: &[Object<PropertySet>]) -> HashMap<String, Object<
     descriptors
         .iter()
         .map(|d| {
-            let props = d.get();
+            let props = d.lock();
             (
                 props.get_type::<String>(OfxPropName, 0).unwrap(),
                 Param::from_descriptor(&props).into_object(),
@@ -834,7 +834,7 @@ fn create_instance(descriptor: &ImageEffect, context: &str) -> ImageEffect {
                 OfxPluginPropFilePath,
                 descriptor
                     .properties
-                    .get()
+                    .lock()
                     .values
                     .get(OfxPluginPropFilePath)
                     .unwrap()
@@ -846,7 +846,7 @@ fn create_instance(descriptor: &ImageEffect, context: &str) -> ImageEffect {
         ],
     )
     .into_object();
-    let descriptors = &descriptor.param_set.get().descriptors;
+    let descriptors = &descriptor.param_set.lock().descriptors;
     let param_set = ParamSet {
         properties: Default::default(),
         descriptors: descriptors.clone(),
@@ -864,18 +864,18 @@ fn create_images(effect: &mut ImageEffect, input: Image) {
     let width = input.width;
     let height = input.height;
     let project_dims: Property = [(width as f64), (height as f64)].into();
-    effect.properties.get().values.insert(
+    effect.properties.lock().values.insert(
         OfxImageEffectPropProjectSize.to_string(),
         project_dims.clone(),
     );
     effect
         .properties
-        .get()
+        .lock()
         .values
         .insert(OfxImageEffectPropProjectExtent.to_string(), project_dims);
 
-    effect.clips.get("Source").unwrap().get().image = Some(input);
-    effect.clips.get("Output").unwrap().get().image =
+    effect.clips.get("Source").unwrap().lock().image = Some(input);
+    effect.clips.get("Output").unwrap().lock().image =
         Some(Image::empty("Output", width, height));
 }
 
@@ -995,8 +995,8 @@ fn create_filter(
 ) -> Result<(), Box<dyn Error>> {
     let effect = {
         let plugin = context.get_plugin(plugin_name)?;
-        let descriptor = plugin.descriptor.get();
-        let values = &descriptor.properties.get().values;
+        let descriptor = plugin.descriptor.lock();
+        let values = &descriptor.properties.lock().values;
         if !values
             .get(OfxImageEffectPropSupportedContexts)
             .map(|p| p.0.contains(&OfxImageEffectContextFilter.into()))
@@ -1045,7 +1045,7 @@ fn create_filter(
         // Instance of the filter. Both instances and descriptors are
         // ImageEffect objects.
         let filter_instance: Object<ImageEffect> =
-            create_instance(&filter.get(), OfxImageEffectContextFilter).into_object();
+            create_instance(&filter.lock(), OfxImageEffectContextFilter).into_object();
 
         plugin.plugin.try_call_action(
             OfxActionCreateInstance,
@@ -1077,7 +1077,7 @@ fn render_filter(
     let width = input.width;
     let height = input.height;
 
-    create_images(&mut instance.effect.get(), input);
+    create_images(&mut instance.effect.lock(), input);
     let render_inargs = PropertySet::new(
         "render_inargs",
         [
@@ -1103,11 +1103,11 @@ fn render_filter(
         output_file,
         instance
             .effect
-            .get()
+            .lock()
             .clips
             .get("Output")
             .unwrap()
-            .get()
+            .lock()
             .image
             .as_ref()
             .unwrap()
@@ -1143,10 +1143,10 @@ fn set_params(
     for (name, val) in values.iter() {
         let param = instance
             .effect
-            .get()
+            .lock()
             .get_param(name)
             .ok_or(format!("No such param: {}", name))?;
-        param.get().value = val.clone();
+        param.lock().value = val.clone();
 
         if call_instance_changed {
             let inargs2 = PropertySet::new(

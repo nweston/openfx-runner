@@ -33,7 +33,7 @@ extern "C" fn clipDefine(
 ) -> OfxStatus {
     if let Ok(name_str) = unsafe { CStr::from_ptr(name).to_str() } {
         let props = imageEffect
-            .with_object(|effect| effect.create_clip(name_str).get().properties.clone());
+            .with_object(|effect| effect.create_clip(name_str).lock().properties.clone());
         if !propertySet.is_null() {
             unsafe {
                 *propertySet = props.into();
@@ -58,7 +58,7 @@ extern "C" fn clipGetHandle(
                 unsafe {
                     *clip = c.clone().into();
                     if !propertySet.is_null() {
-                        *propertySet = c.get().properties.clone().into();
+                        *propertySet = c.lock().properties.clone().into();
                     }
                 }
                 OfxStatus::OK
@@ -492,7 +492,7 @@ extern "C" fn paramGetHandle(
                 unsafe {
                     *param = p.clone().into();
                     if !propertySet.is_null() {
-                        *propertySet = p.get().properties.clone().into();
+                        *propertySet = p.lock().properties.clone().into();
                     }
                 }
                 OfxStatus::OK
@@ -591,7 +591,7 @@ pub extern "C" fn param_get_type(handle: OfxParamHandle) -> *const c_char {
     handle.with_object(|p| {
         if let Ok(PropertyValue::String(s)) = p
             .properties
-            .get()
+            .lock()
             .get(crate::constants::param::OfxParamPropType, 0)
         {
             s.as_c_str().as_ptr()
