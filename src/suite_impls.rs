@@ -34,8 +34,10 @@ extern "C" fn clipDefine(
     if let Ok(name_str) = unsafe { CStr::from_ptr(name).to_str() } {
         let props = imageEffect
             .with_object(|effect| effect.create_clip(name_str).get().properties.clone());
-        unsafe {
-            *propertySet = props.into();
+        if !propertySet.is_null() {
+            unsafe {
+                *propertySet = props.into();
+            }
         }
         OfxStatus::OK
     } else {
@@ -55,7 +57,9 @@ extern "C" fn clipGetHandle(
             if let Some(c) = effect.clips.get(name_str) {
                 unsafe {
                     *clip = c.clone().into();
-                    *propertySet = c.get().properties.clone().into();
+                    if !propertySet.is_null() {
+                        *propertySet = c.get().properties.clone().into();
+                    }
                 }
                 OfxStatus::OK
             } else {
@@ -487,7 +491,9 @@ extern "C" fn paramGetHandle(
             if let Some(p) = ps.params.get(name_str) {
                 unsafe {
                     *param = p.clone().into();
-                    *propertySet = p.get().properties.clone().into();
+                    if !propertySet.is_null() {
+                        *propertySet = p.get().properties.clone().into();
+                    }
                 }
                 OfxStatus::OK
             } else {
