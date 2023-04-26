@@ -6,6 +6,7 @@ int param_value_count(void *);
 int param_get_value_1(void *handle, void *value);
 int param_get_value_2(void *handle, void *value1, void *value2);
 int param_get_value_3(void *handle, void *value1, void *value2, void *value3);
+int param_get_value_4(void *handle, void *value1, void *value2, void *value3, void *value4);
 const char *param_get_type(void *handle);
 void param_set_value_boolean(void *handle, int value);
 void param_set_value_integer(void *handle, int value);
@@ -15,8 +16,8 @@ void param_set_value_string(void *handle, const char *value);
 
 int paramGetValue (void *paramHandle, ...) {
   int count = param_value_count(paramHandle);
-  assert(count <= 3);
-  void *vals[3];
+  assert(count <= 4);
+  void *vals[4];
 
   va_list ap;
   va_start (ap, paramHandle);
@@ -33,6 +34,9 @@ int paramGetValue (void *paramHandle, ...) {
     break;
   case 3:
     return param_get_value_3(paramHandle, vals[0], vals[1], vals[2]);
+    break;
+  case 4:
+    return param_get_value_4(paramHandle, vals[0], vals[1], vals[2], vals[3]);
     break;
   default:
     return 1;                   /* OfxStatus::Failed */

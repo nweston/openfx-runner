@@ -527,9 +527,11 @@ extern "C" {
 pub extern "C" fn param_value_count(paramHandle: OfxParamHandle) -> c_int {
     use ParamValue::*;
     paramHandle.with_object(|p| match p.value {
-        Double2D | Integer2D => 2,
-        Rgb { .. } | Double3D | Integer3D => 3,
-        _ => 1,
+        Double2D(..) | Integer2D(..) => 2,
+        Rgb { .. } | Double3D(..) | Integer3D(..) => 3,
+        Rgba { .. } => 4,
+        Boolean(_) | Choice(_) | Custom(_) | Double(_) | Integer(_) | String(_) => 1,
+        Group | Page | Parametric | PushButton => 0,
     })
 }
 
@@ -542,9 +544,12 @@ pub extern "C" fn param_get_value_1(
     paramHandle.with_object(|p| match p.value {
         Boolean(b) => unsafe { *(value as *mut c_int) = if b { 1 } else { 0 } },
         Choice(index) => unsafe { *(value as *mut c_int) = index as c_int },
+        Custom(ref s) | String(ref s) => unsafe {
+            *(value as *mut *const c_char) = s.as_ptr()
+        },
         Double(v) => unsafe { *(value as *mut c_double) = v },
         Integer(v) => unsafe { *(value as *mut c_int) = v },
-        _ => panic!("not implemented"),
+        ref x => panic!("unexpected param value {:?}", x),
     });
     OfxStatus::OK
 }
@@ -556,7 +561,19 @@ pub extern "C" fn param_get_value_2(
     value1: *mut c_void,
     value2: *mut c_void,
 ) -> OfxStatus {
-    panic!("not implemented");
+    use ParamValue::*;
+    paramHandle.with_object(|p| match p.value {
+        Double2D(x, y) => unsafe {
+            *(value1 as *mut c_double) = x;
+            *(value2 as *mut c_double) = y;
+        },
+        Integer2D(x, y) => unsafe {
+            *(value1 as *mut c_int) = x;
+            *(value2 as *mut c_int) = y;
+        },
+        ref x => panic!("unexpected param value {:?}", x),
+    });
+    OfxStatus::OK
 }
 
 #[no_mangle]
@@ -568,12 +585,43 @@ pub extern "C" fn param_get_value_3(
 ) -> OfxStatus {
     use ParamValue::*;
     paramHandle.with_object(|p| match p.value {
-        Rgb { r, g, b } => unsafe {
+        Double3D(x, y, z) => unsafe {
+            *(value1 as *mut c_double) = x;
+            *(value2 as *mut c_double) = y;
+            *(value3 as *mut c_double) = z;
+        },
+        Integer3D(x, y, z) => unsafe {
+            *(value1 as *mut c_int) = x;
+            *(value2 as *mut c_int) = y;
+            *(value3 as *mut c_int) = z;
+        },
+        Rgb(r, g, b) => unsafe {
             *(value1 as *mut c_double) = r;
             *(value2 as *mut c_double) = g;
             *(value3 as *mut c_double) = b;
         },
-        _ => panic!("not implemented"),
+        ref x => panic!("unexpected param value {:?}", x),
+    });
+    OfxStatus::OK
+}
+
+#[no_mangle]
+pub extern "C" fn param_get_value_4(
+    paramHandle: OfxParamHandle,
+    value1: *mut c_void,
+    value2: *mut c_void,
+    value3: *mut c_void,
+    value4: *mut c_void,
+) -> OfxStatus {
+    use ParamValue::*;
+    paramHandle.with_object(|p| match p.value {
+        Rgba(r, g, b, a) => unsafe {
+            *(value1 as *mut c_double) = r;
+            *(value2 as *mut c_double) = g;
+            *(value3 as *mut c_double) = b;
+            *(value4 as *mut c_double) = a;
+        },
+        ref x => panic!("unexpected param value {:?}", x),
     });
     OfxStatus::OK
 }
@@ -615,7 +663,9 @@ pub extern "C" fn param_set_value_double(handle: OfxParamHandle, value: f64) {
 
 #[no_mangle]
 pub extern "C" fn param_set_value_string(handle: OfxParamHandle, value: *const c_char) {
-    handle.with_object(|p| p.value = ParamValue::String(cstr_to_string(value)));
+    handle.with_object(|p| {
+        p.value = ParamValue::String(unsafe { CStr::from_ptr(value) }.into())
+    });
 }
 
 #[allow(unused_variables)]

@@ -247,21 +247,20 @@ impl Error for OfxError {
 pub enum ParamValue {
     Boolean(bool),
     Choice(usize),
-    Custom,
+    Custom(CString),
     Double(f64),
-    Double2D,
-    Double3D,
+    Double2D(f64, f64),
+    Double3D(f64, f64, f64),
     Group,
     Integer(i32),
-    Integer2D,
-    Integer3D,
+    Integer2D(i32, i32),
+    Integer3D(i32, i32, i32),
     Page,
-    ParamValueParametric,
+    Parametric,
     PushButton,
-    Rgb { r: f64, g: f64, b: f64 },
-    Rgba,
-    StrChoice,
-    String(String),
+    Rgb(f64, f64, f64),
+    Rgba(f64, f64, f64, f64),
+    String(CString),
 }
 
 impl ParamValue {
@@ -277,24 +276,59 @@ impl ParamValue {
                     .get_type::<bool>(OfxParamPropDefault, 0)
                     .unwrap_or(false),
             ),
-            OfxParamTypeInteger => {
-                Self::Integer(props.get_type::<i32>(OfxParamPropDefault, 0).unwrap_or(0))
-            }
-            OfxParamTypeDouble => {
-                Self::Double(props.get_type::<f64>(OfxParamPropDefault, 0).unwrap_or(0.0))
-            }
-            OfxParamTypeString => Self::String(
-                props
-                    .get_type::<String>(OfxParamPropDefault, 0)
-                    .unwrap_or("".into()),
-            ),
             OfxParamTypeChoice => Self::Choice(
                 props.get_type::<i32>(OfxParamPropDefault, 0).unwrap_or(0) as usize,
             ),
-            OfxParamTypePushButton => Self::PushButton,
-            OfxParamTypePage => Self::Page,
+            OfxParamTypeCustom => Self::Custom(
+                props
+                    .get_type::<CString>(OfxParamPropDefault, 0)
+                    .unwrap_or_else(|| CString::new("".to_string()).unwrap()),
+            ),
+            OfxParamTypeDouble => {
+                Self::Double(props.get_type::<f64>(OfxParamPropDefault, 0).unwrap_or(0.0))
+            }
+            OfxParamTypeDouble2D => Self::Double2D(
+                props.get_type::<f64>(OfxParamPropDefault, 0).unwrap_or(0.0),
+                props.get_type::<f64>(OfxParamPropDefault, 1).unwrap_or(0.0),
+            ),
+            OfxParamTypeDouble3D => Self::Double3D(
+                props.get_type::<f64>(OfxParamPropDefault, 0).unwrap_or(0.0),
+                props.get_type::<f64>(OfxParamPropDefault, 1).unwrap_or(0.0),
+                props.get_type::<f64>(OfxParamPropDefault, 2).unwrap_or(0.0),
+            ),
             OfxParamTypeGroup => Self::Group,
-            s => panic!("ParamValue type not implemented: {}", s),
+            OfxParamTypeInteger => {
+                Self::Integer(props.get_type::<i32>(OfxParamPropDefault, 0).unwrap_or(0))
+            }
+            OfxParamTypeInteger2D => Self::Integer2D(
+                props.get_type::<i32>(OfxParamPropDefault, 0).unwrap_or(0),
+                props.get_type::<i32>(OfxParamPropDefault, 1).unwrap_or(0),
+            ),
+            OfxParamTypeInteger3D => Self::Integer3D(
+                props.get_type::<i32>(OfxParamPropDefault, 0).unwrap_or(0),
+                props.get_type::<i32>(OfxParamPropDefault, 1).unwrap_or(0),
+                props.get_type::<i32>(OfxParamPropDefault, 2).unwrap_or(0),
+            ),
+            OfxParamTypePage => Self::Page,
+            OfxParamTypeParametric => Self::Parametric,
+            OfxParamTypePushButton => Self::PushButton,
+            OfxParamTypeRGB => Self::Rgb(
+                props.get_type::<f64>(OfxParamPropDefault, 0).unwrap_or(0.0),
+                props.get_type::<f64>(OfxParamPropDefault, 1).unwrap_or(0.0),
+                props.get_type::<f64>(OfxParamPropDefault, 2).unwrap_or(0.0),
+            ),
+            OfxParamTypeRGBA => Self::Rgba(
+                props.get_type::<f64>(OfxParamPropDefault, 0).unwrap_or(0.0),
+                props.get_type::<f64>(OfxParamPropDefault, 1).unwrap_or(0.0),
+                props.get_type::<f64>(OfxParamPropDefault, 2).unwrap_or(0.0),
+                props.get_type::<f64>(OfxParamPropDefault, 3).unwrap_or(0.0),
+            ),
+            OfxParamTypeString => Self::String(
+                props
+                    .get_type::<CString>(OfxParamPropDefault, 0)
+                    .unwrap_or_else(|| CString::new("".to_string()).unwrap()),
+            ),
+            s => panic!("Unknown param type: {}", s),
         }
     }
 }
@@ -621,6 +655,16 @@ impl From<PropertyValue> for String {
     fn from(p: PropertyValue) -> Self {
         if let PropertyValue::String(val) = p {
             val.into_string().unwrap()
+        } else {
+            panic!("Expected String value, got {:?}", p);
+        }
+    }
+}
+
+impl From<PropertyValue> for CString {
+    fn from(p: PropertyValue) -> Self {
+        if let PropertyValue::String(val) = p {
+            val
         } else {
             panic!("Expected String value, got {:?}", p);
         }
