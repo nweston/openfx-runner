@@ -727,7 +727,11 @@ extern "C" fn message(
         println!(
             "\n{}: {}. {}\n",
             CStr::from_ptr(messageType).to_str().unwrap(),
-            CStr::from_ptr(messageId).to_str().unwrap(),
+            if messageId.is_null() {
+                "(null)"
+            } else {
+                CStr::from_ptr(messageId).to_str().unwrap()
+            },
             CStr::from_ptr(format).to_str().unwrap()
         );
     }
