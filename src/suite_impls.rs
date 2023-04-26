@@ -118,7 +118,7 @@ extern "C" fn clipGetRegionOfDefinition(
 
 #[allow(unused_variables)]
 extern "C" fn abort(imageEffect: OfxImageEffectHandle) -> c_int {
-    panic!("Not implemented!")
+    return 0;
 }
 
 #[allow(unused_variables)]
