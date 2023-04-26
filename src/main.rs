@@ -429,6 +429,10 @@ impl ImageEffect {
                     [
                         (OfxImageEffectPropPixelDepth, OfxBitDepthFloat.into()),
                         (OfxImageEffectPropComponents, OfxImageComponentRGBA.into()),
+                        (OfxImageEffectPropFrameRate, (24.0).into()),
+                        (OfxImagePropPixelAspectRatio, (1.0).into()),
+                        (OfxImageEffectPropFrameRange, [0.0, 1.0].into()),
+                        (OfxImageClipPropConnected, 1.into()),
                     ],
                 )
                 .into_object(),
@@ -836,6 +840,9 @@ fn create_instance(descriptor: &ImageEffect, context: &str) -> ImageEffect {
                     .unwrap()
                     .clone(),
             ),
+            (OfxImageEffectPropFrameRate, (24.0).into()),
+            (OfxImagePropPixelAspectRatio, (1.0).into()),
+            (OfxImageEffectInstancePropEffectDuration, (1.0).into()),
         ],
     )
     .into_object();
