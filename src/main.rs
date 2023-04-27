@@ -258,7 +258,9 @@ pub enum ParamValue {
     Page,
     Parametric,
     PushButton,
+    #[serde(rename = "RGB")]
     Rgb(f64, f64, f64),
+    #[serde(rename = "RGBA")]
     Rgba(f64, f64, f64, f64),
     String(CString),
 }
