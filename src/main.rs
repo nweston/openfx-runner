@@ -1335,6 +1335,11 @@ fn process_command(
             input_file,
             output_file,
         } => render_filter(instance_name, input_file, output_file, context),
+        PrintParams { instance_name } => {
+            let instance = context.get_instance(instance_name)?;
+            println!("{:?}", instance.effect.lock().param_set);
+            Ok(())
+        }
         DestroyInstance { instance_name } => {
             let instance = context.get_instance(instance_name)?;
             let plugin = context.get_plugin(&instance.plugin_name)?;

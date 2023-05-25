@@ -22,6 +22,8 @@ pub enum Command {
         input_file: String,
         output_file: String,
     },
+    /// Print params of an effect instance.
+    PrintParams { instance_name: String },
     /// Destroy an effect instance.
     DestroyInstance { instance_name: String },
     /// Unload a plugin/bundle.
