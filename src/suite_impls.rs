@@ -3,6 +3,7 @@ use crate::cstr_to_string;
 use crate::suites::*;
 use crate::types::*;
 use crate::{FromProperty, Handle, OfxError, ParamValue, PropertySet, PropertyValue};
+use libc::{free, posix_memalign};
 use std::ffi::{c_char, c_double, c_int, c_uint, c_void, CStr};
 
 // ========= ImageEffectSuite =========
@@ -127,12 +128,25 @@ extern "C" fn imageMemoryAlloc(
     nBytes: usize,
     memoryHandle: *mut OfxImageMemoryHandle,
 ) -> OfxStatus {
-    panic!("Not implemented!")
+    unsafe {
+        // Allocate memory directly and return the pointer as a
+        // handle.
+        let mut ptr: *mut c_void = std::ptr::null_mut();
+        // 16-byte alignment is required by the spec
+        if posix_memalign(&mut ptr, 16, nBytes) != 0 {
+            return OfxStatus::ErrMemory;
+        }
+        *memoryHandle = ptr.into();
+    };
+    OfxStatus::OK
 }
 
 #[allow(unused_variables)]
 extern "C" fn imageMemoryFree(memoryHandle: OfxImageMemoryHandle) -> OfxStatus {
-    panic!("Not implemented!")
+    unsafe {
+        free(memoryHandle.into());
+    };
+    OfxStatus::OK
 }
 
 #[allow(unused_variables)]
@@ -140,11 +154,17 @@ extern "C" fn imageMemoryLock(
     memoryHandle: OfxImageMemoryHandle,
     returnedPtr: *mut *mut c_void,
 ) -> OfxStatus {
-    panic!("Not implemented!")
+    // The handle is already a pointer to allocated memory, just
+    // return it
+    unsafe {
+        *returnedPtr = memoryHandle.into();
+    }
+    OfxStatus::OK
 }
 #[allow(unused_variables)]
 extern "C" fn imageMemoryUnlock(memoryHandle: OfxImageMemoryHandle) -> OfxStatus {
-    panic!("Not implemented!")
+    // Nothing to do
+    OfxStatus::OK
 }
 
 pub const IMAGE_EFFECT_SUITE: OfxImageEffectSuiteV1 = OfxImageEffectSuiteV1 {
