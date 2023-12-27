@@ -1010,10 +1010,12 @@ fn read_exr(name: &str, path: &str) -> Result<Image, Box<dyn Error>> {
             )
         },
         // Fill in pixel data
-        |&mut (width, _, ref mut pixels),
+        |&mut (width, height, ref mut pixels),
          position,
          (r, g, b, a): (f32, f32, f32, f32)| {
-            pixels[position.y() * width + position.x()] = Pixel {
+            // Flip y and convert to flat index
+            let index = (height - 1 - position.y()) * width + position.x();
+            pixels[index] = Pixel {
                 r: r,
                 g: g,
                 b: b,
@@ -1031,7 +1033,8 @@ fn read_exr(name: &str, path: &str) -> Result<Image, Box<dyn Error>> {
 
 fn write_exr(filename: &str, image: Image) -> Result<(), Box<dyn Error>> {
     write_rgba_file(filename, image.width, image.height, |x, y| {
-        let pixel = &image.pixels[y * image.width + x];
+        // Flip y and convert to flat index
+        let pixel = &image.pixels[(image.height - 1 - y) * image.width + x];
         (pixel.r, pixel.g, pixel.b, pixel.a)
     })?;
 
