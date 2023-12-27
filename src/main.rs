@@ -21,7 +21,7 @@ use constants::suites::*;
 mod suite_impls;
 mod suites;
 mod types;
-use openexr::prelude::*;
+use exr::prelude::{read_first_rgba_layer_from_file, write_rgba_file};
 use types::*;
 
 /// Holder for objects which can cross the API boundary.
@@ -399,23 +399,6 @@ impl Pixel {
             b: 0.0,
             a: 0.0,
         }
-    }
-}
-
-impl From<Rgba> for Pixel {
-    fn from(p: Rgba) -> Self {
-        Pixel {
-            r: p.r.to_f32(),
-            g: p.g.to_f32(),
-            b: p.b.to_f32(),
-            a: p.a.to_f32(),
-        }
-    }
-}
-
-impl From<Pixel> for Rgba {
-    fn from(p: Pixel) -> Self {
-        Rgba::from_f32(p.r, p.g, p.b, p.a)
     }
 }
 
@@ -1014,37 +997,43 @@ fn create_images(effect: &mut ImageEffect, input: Image) {
 }
 
 fn read_exr(name: &str, path: &str) -> Result<Image, Box<dyn Error>> {
-    let mut file = RgbaInputFile::new(path, 1)?;
-    // Note that windows in OpenEXR are ***inclusive*** bounds, so a
-    // 1920x1080 image has window [0, 0, 1919, 1079].
-    let data_window: [i32; 4] = *file.header().data_window();
-    let width = data_window.width() + 1;
-    let height = data_window.height() + 1;
-    let uwidth = width as usize;
-    let uheight = height as usize;
+    let (width, height, pixels) = read_first_rgba_layer_from_file(
+        path,
+        // Construct pixel storage. We use a tuple which includes
+        // width and height, so we can correctly interpret the flat
+        // vector in the next step
+        |dims, _| {
+            (
+                dims.width(),
+                dims.height(),
+                vec![Pixel::zero(); dims.width() * dims.height()],
+            )
+        },
+        // Fill in pixel data
+        |&mut (width, _, ref mut pixels),
+         position,
+         (r, g, b, a): (f32, f32, f32, f32)| {
+            pixels[position.y() * width + position.x()] = Pixel {
+                r: r,
+                g: g,
+                b: b,
+                a: a,
+            };
+        },
+    )?
+    .layer_data
+    .channel_data
+    .pixels; // Get the pixel storage we constructed
 
-    let mut half_pixels =
-        vec![Rgba::from_f32(0.0, 0.0, 0.0, 0.0); (width * height) as usize];
-    file.set_frame_buffer(&mut half_pixels, 1, width as usize)?;
-    unsafe {
-        file.read_pixels(0, height - 1)?;
-    }
-
-    let pixels = half_pixels.into_iter().map(|p| p.into()).collect();
-
-    Ok(Image::new(name, uwidth, uheight, pixels))
+    // Discard the exr image struct and build our own
+    Ok(Image::new(name, width, height, pixels))
 }
 
 fn write_exr(filename: &str, image: Image) -> Result<(), Box<dyn Error>> {
-    let header = Header::from_dimensions(image.width as i32, image.height as i32);
-    let mut file = RgbaOutputFile::new(filename, &header, RgbaChannels::WriteRgba, 1)?;
-
-    let half_pixels: Vec<Rgba> = image.pixels.into_iter().map(|p| p.into()).collect();
-
-    file.set_frame_buffer(&half_pixels, 1, image.width)?;
-    unsafe {
-        file.write_pixels(image.height as i32)?;
-    }
+    write_rgba_file(filename, image.width, image.height, |x, y| {
+        let pixel = &image.pixels[y * image.width + x];
+        (pixel.r, pixel.g, pixel.b, pixel.a)
+    })?;
 
     Ok(())
 }
