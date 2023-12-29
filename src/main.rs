@@ -1455,12 +1455,13 @@ fn main() {
             for ref c in commands {
                 if let Err(e) = process_command(c, &mut context) {
                     println!("Error running command: {}", e);
-                    break;
+                    std::process::exit(-1);
                 }
             }
         }
         Err(e) => {
             println!("{}", e);
+            std::process::exit(64);
         }
     };
 }
