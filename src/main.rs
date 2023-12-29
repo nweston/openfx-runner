@@ -21,6 +21,7 @@ use constants::suites::*;
 mod suite_impls;
 mod suites;
 mod types;
+use clap::{Parser, Subcommand};
 use exr::prelude::{read_first_rgba_layer_from_file, write_rgba_file};
 use types::*;
 
@@ -1394,6 +1395,20 @@ fn read_commands(path: &str) -> Result<Vec<Command>, GenericError> {
         })
 }
 
+#[derive(Parser)]
+struct Cli {
+    #[command(subcommand)]
+    command: CliCommands,
+}
+
+#[derive(Subcommand)]
+enum CliCommands {
+    /// List all plugins in a bundle
+    List { bundle_name: String },
+    /// Run commands from a JSON file
+    Run { command_file: String },
+}
+
 fn main() {
     const VERSION_NAME: &str = env!("CARGO_PKG_VERSION");
     let version: Vec<_> = VERSION_NAME
@@ -1464,19 +1479,17 @@ fn main() {
         instances: HashMap::new(),
     };
 
-    let args: Vec<String> = env::args().collect();
-
-    // With --list, run ListPlugins on the given bundle
-    let commands = if args.len() == 3 && args[1] == "--list" {
-        vec![Command::ListPlugins {
-            bundle_name: args[2].clone(),
-        }]
-    } else {
+    let commands = match Cli::parse().command {
+        // With --list, run ListPlugins on the given bundle
+        CliCommands::List { bundle_name } => vec![Command::ListPlugins {
+            bundle_name: bundle_name.clone(),
+        }],
         // Otherwise read commands from file
-        read_commands(&args[1]).unwrap_or_else(|e| {
-            println!("{}", e);
-            std::process::exit(64);
-        })
+        CliCommands::Run { ref command_file } => read_commands(command_file)
+            .unwrap_or_else(|e| {
+                println!("{}", e);
+                std::process::exit(64);
+            }),
     };
 
     for ref c in commands {
