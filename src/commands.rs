@@ -35,4 +35,6 @@ pub enum Command {
         values: Vec<(String, ParamValue)>,
         call_instance_changed: bool,
     },
+    /// List all plugins in a bundle
+    ListPlugins { bundle_name: String },
 }

@@ -1072,6 +1072,22 @@ impl<'a> CommandContext<'a> {
     }
 }
 
+fn list_plugins(bundle_name: &str) -> Result<(), Box<dyn Error>> {
+    let path = format!("/usr/OFX/Plugins/{}.ofx.bundle", bundle_name);
+    let bundle = Bundle::new(path.into()).map_err(|e| GenericError {
+        message: format!("Error loading bundle {}", bundle_name),
+        source: e,
+    })?;
+    let lib = bundle.load()?;
+    for (i, p) in get_plugins(&lib)?.into_iter().enumerate() {
+        println!(
+            "{}: {}, v{}.{}",
+            i, p.plugin_identifier, p.plugin_version_major, p.plugin_version_minor
+        );
+    }
+    Ok(())
+}
+
 fn create_plugin(
     bundle_name: &str,
     plugin_name: &str,
@@ -1360,6 +1376,7 @@ fn process_command(
             values,
             call_instance_changed,
         } => set_params(instance_name, values, *call_instance_changed, context),
+        ListPlugins { bundle_name } => list_plugins(bundle_name),
     }
 }
 
