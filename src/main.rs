@@ -1465,22 +1465,26 @@ fn main() {
     };
 
     let args: Vec<String> = env::args().collect();
-    let input = &args[1];
 
-    match read_commands(input) {
-        Ok(commands) => {
-            for ref c in commands {
-                if let Err(e) = process_command(c, &mut context) {
-                    println!("Error running command: {}", e);
-                    std::process::exit(-1);
-                }
-            }
-        }
-        Err(e) => {
+    // With --list, run ListPlugins on the given bundle
+    let commands = if args.len() == 3 && args[1] == "--list" {
+        vec![Command::ListPlugins {
+            bundle_name: args[2].clone(),
+        }]
+    } else {
+        // Otherwise read commands from file
+        read_commands(&args[1]).unwrap_or_else(|e| {
             println!("{}", e);
             std::process::exit(64);
-        }
+        })
     };
+
+    for ref c in commands {
+        if let Err(e) = process_command(c, &mut context) {
+            println!("Error running command: {}", e);
+            std::process::exit(-1);
+        }
+    }
 }
 
 #[cfg(test)]
