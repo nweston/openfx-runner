@@ -1046,6 +1046,9 @@ struct LoadedPlugin {
     bundle: Bundle,
     plugin: Plugin,
     descriptor: Object<ImageEffect>,
+    // Lib is stored here to keep it loaded, but we never read it
+    #[allow(dead_code)]
+    lib: libloading::Library,
 }
 
 struct Instance {
@@ -1126,6 +1129,7 @@ fn create_plugin(
             bundle,
             plugin,
             descriptor,
+            lib,
         },
     );
     Ok(())
