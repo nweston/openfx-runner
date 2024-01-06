@@ -1,5 +1,5 @@
 #![allow(non_snake_case)]
-use crate::cstr_to_string;
+use crate::strings::OfxStr;
 use crate::suites::*;
 use crate::types::*;
 use crate::{FromProperty, Handle, OfxError, ParamValue, PropertySet, PropertyValue};
@@ -32,18 +32,19 @@ extern "C" fn clipDefine(
     name: *const c_char,
     propertySet: *mut OfxPropertySetHandle,
 ) -> OfxStatus {
-    if let Ok(name_str) = unsafe { CStr::from_ptr(name).to_str() } {
-        let props = imageEffect
-            .with_object(|effect| effect.create_clip(name_str).lock().properties.clone());
-        if !propertySet.is_null() {
-            unsafe {
-                *propertySet = props.into();
-            }
+    let props = imageEffect.with_object(|effect| {
+        effect
+            .create_clip(OfxStr::from_ptr(name))
+            .lock()
+            .properties
+            .clone()
+    });
+    if !propertySet.is_null() {
+        unsafe {
+            *propertySet = props.into();
         }
-        OfxStatus::OK
-    } else {
-        OfxStatus::ErrUnknown
     }
+    OfxStatus::OK
 }
 
 #[allow(unused_variables)]
@@ -53,23 +54,19 @@ extern "C" fn clipGetHandle(
     clip: *mut OfxImageClipHandle,
     propertySet: *mut OfxPropertySetHandle,
 ) -> OfxStatus {
-    if let Ok(name_str) = unsafe { CStr::from_ptr(name).to_str() } {
-        imageEffect.with_object(|effect| {
-            if let Some(c) = effect.clips.get(name_str) {
-                unsafe {
-                    *clip = c.clone().into();
-                    if !propertySet.is_null() {
-                        *propertySet = c.lock().properties.clone().into();
-                    }
+    imageEffect.with_object(|effect| {
+        if let Some(c) = effect.clips.get(OfxStr::from_ptr(name).as_str()) {
+            unsafe {
+                *clip = c.clone().into();
+                if !propertySet.is_null() {
+                    *propertySet = c.lock().properties.clone().into();
                 }
-                OfxStatus::OK
-            } else {
-                OfxStatus::ErrUnknown
             }
-        })
-    } else {
-        OfxStatus::ErrUnknown
-    }
+            OfxStatus::OK
+        } else {
+            OfxStatus::ErrUnknown
+        }
+    })
 }
 
 #[allow(unused_variables)]
@@ -190,8 +187,9 @@ fn set_property(
     index: c_int,
     value: PropertyValue,
 ) -> OfxStatus {
-    properties
-        .with_object(|props| props.set(&cstr_to_string(name), index as usize, value));
+    properties.with_object(|props| {
+        props.set(OfxStr::from_ptr(name).as_str(), index as usize, value)
+    });
     OfxStatus::OK
 }
 
@@ -210,11 +208,7 @@ extern "C" fn propSetString(
     index: c_int,
     value: *const c_char,
 ) -> OfxStatus {
-    if let Ok(value_str) = unsafe { CStr::from_ptr(value).to_str() } {
-        set_property(properties, property, index, value_str.into())
-    } else {
-        OfxStatus::ErrUnknown
-    }
+    set_property(properties, property, index, OfxStr::from_ptr(value).into())
 }
 
 extern "C" fn propSetDouble(
@@ -278,10 +272,10 @@ extern "C" fn propSetIntN(
 fn get_property<T: FromProperty>(
     value: *mut T,
     props: &PropertySet,
-    key: &str,
+    key: OfxStr,
     index: usize,
 ) -> OfxError {
-    let r = props.get(&key, index).and_then(|p| {
+    let r = props.get(key, index).and_then(|p| {
         if let Some(v) = FromProperty::from_property(p) {
             unsafe { *value = v };
             Ok(())
@@ -311,7 +305,7 @@ fn get_property<T: FromProperty>(
 fn get_property_array<T: FromProperty>(
     value: *mut T,
     props: &PropertySet,
-    key: &str,
+    key: OfxStr,
     count: usize,
 ) -> OfxError {
     for i in 0..count {
@@ -330,7 +324,7 @@ extern "C" fn propGetPointer(
     value: *mut *const c_void,
 ) -> OfxStatus {
     properties.with_object(|props| {
-        get_property(value, props, &cstr_to_string(property), index as usize)
+        get_property(value, props, OfxStr::from_ptr(property), index as usize)
             .get_status("propGetPointer: ")
     })
 }
@@ -342,7 +336,7 @@ extern "C" fn propGetString(
     value: *mut *const c_char,
 ) -> OfxStatus {
     properties.with_object(|props| {
-        get_property(value, props, &cstr_to_string(property), index as usize)
+        get_property(value, props, OfxStr::from_ptr(property), index as usize)
             .get_status("propGetString: ")
     })
 }
@@ -354,7 +348,7 @@ extern "C" fn propGetDouble(
     value: *mut c_double,
 ) -> OfxStatus {
     properties.with_object(|props| {
-        get_property(value, props, &cstr_to_string(property), index as usize)
+        get_property(value, props, OfxStr::from_ptr(property), index as usize)
             .get_status("propGetDouble: ")
     })
 }
@@ -366,7 +360,7 @@ extern "C" fn propGetInt(
     value: *mut c_int,
 ) -> OfxStatus {
     properties.with_object(|props| {
-        get_property(value, props, &cstr_to_string(property), index as usize)
+        get_property(value, props, OfxStr::from_ptr(property), index as usize)
             .get_status("propGetInt: ")
     })
 }
@@ -379,7 +373,7 @@ extern "C" fn propGetPointerN(
     value: *mut *const c_void,
 ) -> OfxStatus {
     properties.with_object(|props| {
-        get_property_array(value, props, &cstr_to_string(property), count as usize)
+        get_property_array(value, props, OfxStr::from_ptr(property), count as usize)
             .get_status("propGetPointerN: ")
     })
 }
@@ -392,7 +386,7 @@ extern "C" fn propGetStringN(
     value: *mut *const c_char,
 ) -> OfxStatus {
     properties.with_object(|props| {
-        get_property_array(value, props, &cstr_to_string(property), count as usize)
+        get_property_array(value, props, OfxStr::from_ptr(property), count as usize)
             .get_status("propGetStringN: ")
     })
 }
@@ -405,7 +399,7 @@ extern "C" fn propGetDoubleN(
     value: *mut c_double,
 ) -> OfxStatus {
     properties.with_object(|props| {
-        get_property_array(value, props, &cstr_to_string(property), count as usize)
+        get_property_array(value, props, OfxStr::from_ptr(property), count as usize)
             .get_status("propGetDoubleN: ")
     })
 }
@@ -418,7 +412,7 @@ extern "C" fn propGetIntN(
     value: *mut c_int,
 ) -> OfxStatus {
     properties.with_object(|props| {
-        get_property_array(value, props, &cstr_to_string(property), count as usize)
+        get_property_array(value, props, OfxStr::from_ptr(property), count as usize)
             .get_status("propGetIntN: ")
     })
 }
@@ -436,9 +430,9 @@ extern "C" fn propGetDimension(
     property: *const c_char,
     count: *mut c_int,
 ) -> OfxStatus {
-    let key = cstr_to_string(property);
+    let key = OfxStr::from_ptr(property);
     properties.with_object(|props| {
-        if let Some(values) = props.values.get(&key) {
+        if let Some(values) = props.values.get(key.as_str()) {
             unsafe { *count = values.0.len() as i32 }
             OfxStatus::OK
         } else {
@@ -477,18 +471,11 @@ extern "C" fn paramDefine(
     name: *const c_char,
     propertySet: *mut OfxPropertySetHandle,
 ) -> OfxStatus {
-    if let (Ok(type_str), Ok(name_str)) = unsafe {
-        (
-            CStr::from_ptr(paramType).to_str(),
-            CStr::from_ptr(name).to_str(),
-        )
-    } {
-        let props = paramSet.with_object(|p| p.create_param(type_str, name_str));
-        unsafe { *propertySet = props }
-        OfxStatus::OK
-    } else {
-        OfxStatus::ErrUnknown
-    }
+    let props = paramSet.with_object(|p| {
+        p.create_param(OfxStr::from_ptr(paramType), OfxStr::from_ptr(name))
+    });
+    unsafe { *propertySet = props }
+    OfxStatus::OK
 }
 
 #[allow(unused_variables)]
@@ -498,23 +485,19 @@ extern "C" fn paramGetHandle(
     param: *mut OfxParamHandle,
     propertySet: *mut OfxPropertySetHandle,
 ) -> OfxStatus {
-    if let Ok(name_str) = unsafe { CStr::from_ptr(name).to_str() } {
-        paramSet.with_object(|ps| {
-            if let Some(p) = ps.params.get(name_str) {
-                unsafe {
-                    *param = p.clone().into();
-                    if !propertySet.is_null() {
-                        *propertySet = p.lock().properties.clone().into();
-                    }
+    paramSet.with_object(|ps| {
+        if let Some(p) = ps.params.get(OfxStr::from_ptr(name).as_str()) {
+            unsafe {
+                *param = p.clone().into();
+                if !propertySet.is_null() {
+                    *propertySet = p.lock().properties.clone().into();
                 }
-                OfxStatus::OK
-            } else {
-                OfxStatus::ErrUnknown
             }
-        })
-    } else {
-        OfxStatus::ErrUnknown
-    }
+            OfxStatus::OK
+        } else {
+            OfxStatus::ErrUnknown
+        }
+    })
 }
 
 extern "C" fn paramSetGetPropertySet(
@@ -684,6 +667,8 @@ pub extern "C" fn param_set_value_double(handle: OfxParamHandle, value: f64) {
 #[no_mangle]
 pub extern "C" fn param_set_value_string(handle: OfxParamHandle, value: *const c_char) {
     handle.with_object(|p| {
+        // Note: not using OfxStr here. String param values are stored
+        // as CString and don't need to be UTF-8
         p.value = ParamValue::String(unsafe { CStr::from_ptr(value) }.into())
     });
 }
@@ -793,18 +778,16 @@ extern "C" fn message(
     messageId: *const c_char,
     format: *const c_char,
 ) -> OfxStatus {
-    unsafe {
-        println!(
-            "\n{}: {}. {}\n",
-            CStr::from_ptr(messageType).to_str().unwrap(),
-            if messageId.is_null() {
-                "(null)"
-            } else {
-                CStr::from_ptr(messageId).to_str().unwrap()
-            },
-            CStr::from_ptr(format).to_str().unwrap()
-        );
-    }
+    println!(
+        "\n{}: {}. {}\n",
+        OfxStr::from_ptr(messageType),
+        if messageId.is_null() {
+            OfxStr::from_str("(null)\0")
+        } else {
+            OfxStr::from_ptr(messageId)
+        },
+        OfxStr::from_ptr(format)
+    );
     OfxStatus::OK
 }
 

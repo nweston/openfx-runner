@@ -2,7 +2,8 @@
 
 macro_rules! constant {
     ($name: ident) => {
-        pub const $name: &str = stringify!($name);
+        pub const $name: crate::strings::OfxStr =
+            crate::strings::OfxStr::from_str(concat!(stringify!($name), "\0"));
     };
 }
 
@@ -59,6 +60,8 @@ pub mod host {
 }
 
 pub mod image_effect {
+    use crate::strings::OfxStr;
+
     constant!(OfxImageEffectActionBeginSequenceRender);
     constant!(OfxImageEffectActionDescribeInContext);
     constant!(OfxImageEffectActionEndSequenceRender);
@@ -130,10 +133,10 @@ pub mod image_effect {
     constant!(OfxImageEffectPropSupportedContexts);
     constant!(OfxImageEffectPropSupportedPixelDepths);
     // Note: name and string value don't match
-    pub const OfxImageEffectPropSupportsMultipleClipDepths: &str =
-        "OfxImageEffectPropMultipleClipDepths";
-    pub const OfxImageEffectPropSupportsMultipleClipPARs: &str =
-        "OfxImageEffectPropMultipleClipPARs";
+    pub const OfxImageEffectPropSupportsMultipleClipDepths: OfxStr =
+        OfxStr::from_str("OfxImageEffectPropMultipleClipDepths\0");
+    pub const OfxImageEffectPropSupportsMultipleClipPARs: OfxStr =
+        OfxStr::from_str("OfxImageEffectPropMultipleClipPARs\0");
     constant!(OfxImageEffectPropSupportsMultiResolution);
     constant!(OfxImageEffectPropSupportsOverlays);
     constant!(OfxImageEffectPropSupportsTiles);
@@ -299,10 +302,12 @@ pub mod param {
 }
 
 pub mod interact {
-    pub const OfxActionDescribeInteract: &str = super::actions::OfxActionDescribe;
-    pub const OfxActionCreateInstanceInteract: &str =
+    use crate::strings::OfxStr;
+
+    pub const OfxActionDescribeInteract: OfxStr = super::actions::OfxActionDescribe;
+    pub const OfxActionCreateInstanceInteract: OfxStr =
         super::actions::OfxActionCreateInstance;
-    pub const OfxActionDestroyInstanceInteract: &str =
+    pub const OfxActionDestroyInstanceInteract: OfxStr =
         super::actions::OfxActionDestroyInstance;
     constant!(OfxInteractActionDraw);
     constant!(OfxInteractActionGainFocus);

@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env;
 use std::error::Error;
-use std::ffi::{c_char, c_int, c_void, CStr, CString};
+use std::ffi::{c_char, c_int, c_void, CString};
 use std::fs;
 use std::string::String;
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
@@ -24,6 +24,8 @@ mod types;
 use clap::{Parser, Subcommand};
 use exr::prelude::{read_first_rgba_layer_from_file, write_rgba_file};
 use types::*;
+mod strings;
+use strings::OfxStr;
 
 /// Holder for objects which can cross the API boundary.
 ///
@@ -269,11 +271,9 @@ pub enum ParamValue {
 impl ParamValue {
     fn from_descriptor(props: &PropertySet) -> Self {
         #[allow(non_upper_case_globals)]
-        match props
-            .get_type::<String>(OfxParamPropType, 0)
-            .unwrap()
-            .as_str()
-        {
+        match OfxStr::from_cstring(
+            &props.get_type::<CString>(OfxParamPropType, 0).unwrap(),
+        ) {
             OfxParamTypeBoolean => Self::Boolean(
                 props
                     .get_type::<bool>(OfxParamPropDefault, 0)
@@ -360,9 +360,9 @@ struct ParamSet {
 }
 
 impl ParamSet {
-    fn create_param(&mut self, kind: &str, name: &str) -> OfxPropertySetHandle {
+    fn create_param(&mut self, kind: OfxStr, name: OfxStr) -> OfxPropertySetHandle {
         let props = PropertySet::new(
-            &("param_".to_string() + name),
+            &("param_".to_string() + name.as_str()),
             [(OfxPropName, name.into()), (OfxParamPropType, kind.into())],
         )
         .into_object();
@@ -480,9 +480,9 @@ pub struct ImageEffect {
 }
 
 impl ImageEffect {
-    fn create_clip(&mut self, name: &str) -> Object<Clip> {
+    fn create_clip(&mut self, name: OfxStr) -> Object<Clip> {
         self.clips.insert(
-            name.into(),
+            name.to_string(),
             Clip {
                 properties: PropertySet::new(
                     &format!("clip_{}", name),
@@ -500,7 +500,7 @@ impl ImageEffect {
             }
             .into_object(),
         );
-        self.clips.get(name).unwrap().clone()
+        self.clips.get(name.as_str()).unwrap().clone()
     }
 
     fn get_param(&self, name: &str) -> Option<Object<Param>> {
@@ -540,19 +540,18 @@ struct Plugin {
 impl Plugin {
     fn call_action(
         &self,
-        action: &str,
+        action: OfxStr,
         handle: OfxImageEffectHandle,
         in_args: OfxPropertySetHandle,
         out_args: OfxPropertySetHandle,
     ) -> OfxStatus {
         let handle_ptr: *mut c_void = handle.into();
-        let c_action = CString::new(action).unwrap();
-        (self.main_entry)(c_action.as_ptr(), handle_ptr, in_args, out_args)
+        (self.main_entry)(action.as_ptr(), handle_ptr, in_args, out_args)
     }
 
     fn try_call_action(
         &self,
-        action: &str,
+        action: OfxStr,
         handle: OfxImageEffectHandle,
         in_args: OfxPropertySetHandle,
         out_args: OfxPropertySetHandle,
@@ -603,6 +602,12 @@ impl From<CString> for PropertyValue {
 impl From<&str> for PropertyValue {
     fn from(s: &str) -> Self {
         PropertyValue::String(CString::new(s).unwrap())
+    }
+}
+
+impl From<OfxStr<'_>> for PropertyValue {
+    fn from(s: OfxStr) -> Self {
+        PropertyValue::String(s.to_cstring())
     }
 }
 
@@ -763,10 +768,10 @@ pub struct PropertySet {
 }
 
 impl PropertySet {
-    fn new<const S: usize>(name: &str, values: [(&str, Property); S]) -> Self {
+    fn new<const S: usize>(name: &str, values: [(OfxStr, Property); S]) -> Self {
         let mut properties = HashMap::new();
         for (name, value) in values {
-            properties.insert(name.into(), value);
+            properties.insert(name.as_str().into(), value);
         }
         Self {
             name: name.to_string(),
@@ -774,9 +779,9 @@ impl PropertySet {
         }
     }
 
-    fn get(&self, key: &str, index: usize) -> Result<&PropertyValue, OfxError> {
+    fn get(&self, key: OfxStr, index: usize) -> Result<&PropertyValue, OfxError> {
         self.values
-            .get(key)
+            .get(key.as_str())
             .ok_or_else(|| OfxError {
                 message: format!("Property {} not found on {}", key, self.name),
                 status: OfxStatus::ErrUnknown,
@@ -795,7 +800,7 @@ impl PropertySet {
     /// Get a value and convert to the desired type.
     ///
     /// Returns None for missing property, panics on wrong type.
-    fn get_type<T>(&self, key: &str, index: usize) -> Option<T>
+    fn get_type<T>(&self, key: OfxStr, index: usize) -> Option<T>
     where
         T: Clone + From<PropertyValue>,
     {
@@ -860,16 +865,12 @@ impl Bundle {
     }
 }
 
-fn cstr_to_string(s: *const c_char) -> String {
-    unsafe { CStr::from_ptr(s).to_str().unwrap().to_string() }
-}
-
 extern "C" fn fetch_suite(
     _host: OfxPropertySetHandle,
     name: *const c_char,
     version: c_int,
 ) -> *const c_void {
-    let suite = unsafe { CStr::from_ptr(name).to_str().unwrap() };
+    let suite = OfxStr::from_ptr(name);
     if suite == OfxImageEffectSuite {
         assert!(version == 1);
         &suite_impls::IMAGE_EFFECT_SUITE as *const _ as *const c_void
@@ -906,9 +907,9 @@ fn get_plugins(lib: &libloading::Library) -> Result<Vec<Plugin>, Box<dyn Error>>
         for i in 0..count {
             let p = &*get_plugin(i);
             plugins.push(Plugin {
-                plugin_api: cstr_to_string(p.pluginApi),
+                plugin_api: OfxStr::from_ptr(p.pluginApi).to_string(),
                 api_version: p.apiVersion,
-                plugin_identifier: cstr_to_string(p.pluginIdentifier),
+                plugin_identifier: OfxStr::from_ptr(p.pluginIdentifier).to_string(),
                 plugin_version_major: p.pluginVersionMajor,
                 plugin_version_minor: p.pluginVersionMinor,
                 set_host: p.setHost,
@@ -954,7 +955,7 @@ fn create_instance(descriptor: &ImageEffect, context: &str) -> ImageEffect {
                     .properties
                     .lock()
                     .values
-                    .get(OfxPluginPropFilePath)
+                    .get(OfxPluginPropFilePath.as_str())
                     .unwrap()
                     .clone(),
             ),
@@ -1145,14 +1146,14 @@ fn create_filter(
         let descriptor = plugin.descriptor.lock();
         let values = &descriptor.properties.lock().values;
         if !values
-            .get(OfxImageEffectPropSupportedContexts)
+            .get(OfxImageEffectPropSupportedContexts.as_str())
             .map(|p| p.0.contains(&OfxImageEffectContextFilter.into()))
             .unwrap_or(false)
         {
             return Err("Filter context not supported".into());
         }
         if !values
-            .get(OfxImageEffectPropSupportedPixelDepths)
+            .get(OfxImageEffectPropSupportedPixelDepths.as_str())
             .map(|p| p.0.contains(&OfxBitDepthFloat.into()))
             .unwrap_or(false)
         {
@@ -1192,7 +1193,8 @@ fn create_filter(
         // Instance of the filter. Both instances and descriptors are
         // ImageEffect objects.
         let filter_instance: Object<ImageEffect> =
-            create_instance(&filter.lock(), OfxImageEffectContextFilter).into_object();
+            create_instance(&filter.lock(), OfxImageEffectContextFilter.as_str())
+                .into_object();
 
         plugin.plugin.try_call_action(
             OfxActionCreateInstance,
