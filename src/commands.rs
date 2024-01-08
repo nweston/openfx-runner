@@ -37,4 +37,9 @@ pub enum Command {
     },
     /// List all plugins in a bundle
     ListPlugins { bundle_name: String },
+    /// Describe plugin and print results
+    Describe {
+        bundle_name: String,
+        plugin_name: String,
+    },
 }

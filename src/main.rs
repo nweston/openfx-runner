@@ -1,5 +1,5 @@
 use once_cell::sync::Lazy;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
 use std::collections::HashMap;
 use std::env;
 use std::error::Error;
@@ -580,6 +580,23 @@ enum PropertyValue {
     Unset,
 }
 
+impl Serialize for PropertyValue {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match &self {
+            PropertyValue::Pointer(_) => serializer.serialize_str("<pointer>"),
+            PropertyValue::String(s) => {
+                serializer.serialize_str(OfxStr::from_ptr(s.as_ptr()).as_str())
+            }
+            PropertyValue::Double(v) => serializer.serialize_f64(*v),
+            PropertyValue::Int(v) => serializer.serialize_i32(*v),
+            PropertyValue::Unset => serializer.serialize_str("<unset>"),
+        }
+    }
+}
+
 impl std::fmt::Debug for PropertyValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self {
@@ -732,7 +749,7 @@ impl FromProperty for i32 {
     }
 }
 
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Default, Debug, Serialize)]
 struct Property(Vec<PropertyValue>);
 
 // Make a PropertyValue from a single value
@@ -761,7 +778,7 @@ where
     }
 }
 
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Default, Debug, Serialize)]
 pub struct PropertySet {
     name: String,
     values: HashMap<String, Property>,
@@ -1339,6 +1356,45 @@ fn set_params(
     Ok(())
 }
 
+fn describe(
+    bundle_name: &str,
+    plugin_name: &str,
+    context: &mut CommandContext,
+) -> Result<(), Box<dyn Error>> {
+    let path = format!("/usr/OFX/Plugins/{}.ofx.bundle", bundle_name);
+    let bundle = Bundle::new(path.into()).map_err(|e| GenericError {
+        message: format!("Error loading bundle {}", bundle_name),
+        source: e,
+    })?;
+    let lib = bundle.load()?;
+    let plugin = get_plugins(&lib)?
+        .into_iter()
+        .find(|p| p.plugin_identifier == plugin_name)
+        .ok_or(format!("Plugin {} not found in bundle", plugin_name))?;
+    (plugin.set_host)(context.host);
+    plugin.try_call_action(
+        OfxActionLoad,
+        OfxImageEffectHandle::from(std::ptr::null_mut()),
+        OfxPropertySetHandle::from(std::ptr::null_mut()),
+        OfxPropertySetHandle::from(std::ptr::null_mut()),
+    )?;
+
+    let descriptor: Object<ImageEffect> = Default::default();
+    plugin.try_call_action(
+        OfxActionDescribe,
+        descriptor.clone().into(),
+        OfxPropertySetHandle::from(std::ptr::null_mut()),
+        OfxPropertySetHandle::from(std::ptr::null_mut()),
+    )?;
+
+    println!(
+        "{}",
+        serde_json::to_string(&*descriptor.lock().properties.lock())?
+    );
+
+    Ok(())
+}
+
 fn process_command(
     command: &Command,
     context: &mut CommandContext,
@@ -1393,6 +1449,10 @@ fn process_command(
             call_instance_changed,
         } => set_params(instance_name, values, *call_instance_changed, context),
         ListPlugins { bundle_name } => list_plugins(bundle_name),
+        Describe {
+            bundle_name,
+            plugin_name,
+        } => describe(bundle_name, plugin_name, context),
     }
 }
 
@@ -1420,6 +1480,11 @@ struct Cli {
 enum CliCommands {
     /// List all plugins in a bundle
     List { bundle_name: String },
+    /// Describe a plugin
+    Describe {
+        bundle_name: String,
+        plugin_name: String,
+    },
     /// Run commands from a JSON file
     Run { command_file: String },
 }
@@ -1495,9 +1560,16 @@ fn main() {
     };
 
     let commands = match Cli::parse().command {
-        // With --list, run ListPlugins on the given bundle
+        // Run ListPlugins on the given bundle
         CliCommands::List { bundle_name } => vec![Command::ListPlugins {
             bundle_name: bundle_name.clone(),
+        }],
+        CliCommands::Describe {
+            bundle_name,
+            plugin_name,
+        } => vec![Command::Describe {
+            bundle_name: bundle_name.clone(),
+            plugin_name: plugin_name.clone(),
         }],
         // Otherwise read commands from file
         CliCommands::Run { ref command_file } => read_commands(command_file)
