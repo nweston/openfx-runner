@@ -480,6 +480,18 @@ pub struct ImageEffect {
 }
 
 impl ImageEffect {
+    fn new(name: &str) -> Object<Self> {
+        Self {
+            properties: PropertySet {
+                name: name.to_string(),
+                ..Default::default()
+            }
+            .into_object(),
+            ..Default::default()
+        }
+        .into_object()
+    }
+
     fn create_clip(&mut self, name: OfxStr) -> Object<Clip> {
         self.clips.insert(
             name.to_string(),
@@ -1142,7 +1154,7 @@ fn create_plugin(
         OfxPropertySetHandle::from(std::ptr::null_mut()),
     )?;
 
-    let descriptor: Object<ImageEffect> = Default::default();
+    let descriptor = ImageEffect::new(plugin_name);
     plugin.try_call_action(
         OfxActionDescribe,
         descriptor.clone().into(),
@@ -1379,7 +1391,7 @@ fn describe(
         OfxPropertySetHandle::from(std::ptr::null_mut()),
     )?;
 
-    let descriptor: Object<ImageEffect> = Default::default();
+    let descriptor = ImageEffect::new(plugin_name);
     plugin.try_call_action(
         OfxActionDescribe,
         descriptor.clone().into(),
