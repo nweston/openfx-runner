@@ -436,7 +436,7 @@ extern "C" fn propGetDimension(
             unsafe { *count = values.0.len() as i32 }
             OfxStatus::OK
         } else {
-            println!("propGetDimension: {} not found in {}", key, props.name);
+            eprintln!("propGetDimension: {} not found in {}", key, props.name);
             OfxStatus::ErrUnknown
         }
     })

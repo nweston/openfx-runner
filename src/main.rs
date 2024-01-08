@@ -227,7 +227,7 @@ impl OfxError {
     /// Return the OFX status code. If it's an error
     fn get_status(&self, error_message_prefix: &str) -> OfxStatus {
         if self.status.failed() {
-            println!("{}{}", error_message_prefix, self.message);
+            eprintln!("{}{}", error_message_prefix, self.message);
         }
         self.status
     }
@@ -898,7 +898,7 @@ extern "C" fn fetch_suite(
             &suite_impls::MESSAGE_SUITE as *const _ as *const c_void
         }
         _ => {
-            println!("fetch_suite: {} v{} is not available", suite, version);
+            eprintln!("fetch_suite: {} v{} is not available", suite, version);
             std::ptr::null()
         }
     }
@@ -1502,14 +1502,14 @@ fn main() {
         // Otherwise read commands from file
         CliCommands::Run { ref command_file } => read_commands(command_file)
             .unwrap_or_else(|e| {
-                println!("{}", e);
+                eprintln!("{}", e);
                 std::process::exit(64);
             }),
     };
 
     for ref c in commands {
         if let Err(e) = process_command(c, &mut context) {
-            println!("Error running command: {}", e);
+            eprintln!("Error running command: {}", e);
             std::process::exit(-1);
         }
     }
