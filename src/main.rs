@@ -871,27 +871,36 @@ extern "C" fn fetch_suite(
     version: c_int,
 ) -> *const c_void {
     let suite = OfxStr::from_ptr(name);
-    if suite == OfxImageEffectSuite {
-        assert!(version == 1);
-        &suite_impls::IMAGE_EFFECT_SUITE as *const _ as *const c_void
-    } else if suite == OfxPropertySuite {
-        assert!(version == 1);
-        &suite_impls::PROPERTY_SUITE as *const _ as *const c_void
-    } else if suite == OfxParameterSuite {
-        assert!(version == 1);
-        &suite_impls::PARAMETER_SUITE as *const _ as *const c_void
-    } else if suite == OfxMemorySuite {
-        assert!(version == 1);
-        &suite_impls::MEMORY_SUITE as *const _ as *const c_void
-    } else if suite == OfxMultiThreadSuite {
-        assert!(version == 1);
-        &suite_impls::MULTI_THREAD_SUITE as *const _ as *const c_void
-    } else if suite == OfxMessageSuite {
-        assert!(version == 1);
-        &suite_impls::MESSAGE_SUITE as *const _ as *const c_void
-    } else {
-        println!("fetch_suite: {} v{} is not available", suite, version);
-        std::ptr::null()
+    #[allow(non_upper_case_globals)]
+    match suite {
+        OfxImageEffectSuite => {
+            assert!(version == 1);
+            &suite_impls::IMAGE_EFFECT_SUITE as *const _ as *const c_void
+        }
+        OfxPropertySuite => {
+            assert!(version == 1);
+            &suite_impls::PROPERTY_SUITE as *const _ as *const c_void
+        }
+        OfxParameterSuite => {
+            assert!(version == 1);
+            &suite_impls::PARAMETER_SUITE as *const _ as *const c_void
+        }
+        OfxMemorySuite => {
+            assert!(version == 1);
+            &suite_impls::MEMORY_SUITE as *const _ as *const c_void
+        }
+        OfxMultiThreadSuite => {
+            assert!(version == 1);
+            &suite_impls::MULTI_THREAD_SUITE as *const _ as *const c_void
+        }
+        OfxMessageSuite => {
+            assert!(version == 1);
+            &suite_impls::MESSAGE_SUITE as *const _ as *const c_void
+        }
+        _ => {
+            println!("fetch_suite: {} v{} is not available", suite, version);
+            std::ptr::null()
+        }
     }
 }
 
