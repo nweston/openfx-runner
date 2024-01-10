@@ -640,6 +640,12 @@ impl From<OfxStr<'_>> for PropertyValue {
     }
 }
 
+impl From<*const c_char> for PropertyValue {
+    fn from(s: *const c_char) -> Self {
+        OfxStr::from_ptr(s).into()
+    }
+}
+
 impl From<c_int> for PropertyValue {
     fn from(i: c_int) -> Self {
         PropertyValue::Int(i)

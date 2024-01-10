@@ -193,6 +193,19 @@ fn set_property(
     OfxStatus::OK
 }
 
+fn set_property_n<T: Into<PropertyValue> + Copy>(
+    properties: OfxPropertySetHandle,
+    name: *const c_char,
+    count: c_int,
+    value: *const T,
+) -> OfxStatus {
+    let s = unsafe { std::slice::from_raw_parts(value, count as usize) };
+    for (i, v) in s.iter().enumerate() {
+        set_property(properties, name, i as i32, (*v).into());
+    }
+    OfxStatus::OK
+}
+
 extern "C" fn propSetPointer(
     properties: OfxPropertySetHandle,
     property: *const c_char,
@@ -208,7 +221,7 @@ extern "C" fn propSetString(
     index: c_int,
     value: *const c_char,
 ) -> OfxStatus {
-    set_property(properties, property, index, OfxStr::from_ptr(value).into())
+    set_property(properties, property, index, value.into())
 }
 
 extern "C" fn propSetDouble(
@@ -236,7 +249,7 @@ extern "C" fn propSetPointerN(
     count: c_int,
     value: *const *mut c_void,
 ) -> OfxStatus {
-    panic!("Not implemented!");
+    set_property_n(properties, property, count, value)
 }
 
 #[allow(unused_variables)]
@@ -246,7 +259,7 @@ extern "C" fn propSetStringN(
     count: c_int,
     value: *const *const c_char,
 ) -> OfxStatus {
-    panic!("Not implemented!");
+    set_property_n(properties, property, count, value)
 }
 
 #[allow(unused_variables)]
@@ -256,7 +269,7 @@ extern "C" fn propSetDoubleN(
     count: c_int,
     value: *const c_double,
 ) -> OfxStatus {
-    panic!("Not implemented!");
+    set_property_n(properties, property, count, value)
 }
 
 #[allow(unused_variables)]
@@ -266,7 +279,7 @@ extern "C" fn propSetIntN(
     count: c_int,
     value: *const c_int,
 ) -> OfxStatus {
-    panic!("Not implemented!");
+    set_property_n(properties, property, count, value)
 }
 
 fn get_property<T: FromProperty>(
