@@ -42,4 +42,9 @@ pub enum Command {
         bundle_name: String,
         plugin_name: String,
     },
+    /// Describe plugin in filter context and print results
+    DescribeFilter {
+        bundle_name: String,
+        plugin_name: String,
+    },
 }

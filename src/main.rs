@@ -1,4 +1,5 @@
 use once_cell::sync::Lazy;
+use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize, Serializer};
 use std::collections::HashMap;
 use std::env;
@@ -45,6 +46,15 @@ impl<T> Object<T> {
 impl<T> Clone for Object<T> {
     fn clone(&self) -> Self {
         Self(self.0.clone())
+    }
+}
+
+impl<T: Serialize> Serialize for Object<T> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.lock().serialize(serializer)
     }
 }
 
@@ -336,7 +346,7 @@ impl ParamValue {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 struct Param {
     value: ParamValue,
     properties: Object<PropertySet>,
@@ -352,7 +362,7 @@ impl Param {
 }
 impl IntoObject for Param {}
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 struct ParamSet {
     properties: Object<PropertySet>,
     descriptors: Vec<Object<PropertySet>>,
@@ -470,6 +480,15 @@ impl Clone for Clip {
     }
 }
 
+impl Serialize for Clip {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.properties.serialize(serializer)
+    }
+}
+
 impl IntoObject for Clip {}
 
 #[derive(Clone, Debug)]
@@ -477,6 +496,19 @@ pub struct ImageEffect {
     properties: Object<PropertySet>,
     param_set: Object<ParamSet>,
     clips: HashMap<String, Object<Clip>>,
+}
+
+impl Serialize for ImageEffect {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut map = serializer.serialize_map(Some(3))?;
+        map.serialize_entry("properties", &self.properties)?;
+        map.serialize_entry("param_set", &self.param_set)?;
+        map.serialize_entry("clips", &self.clips)?;
+        map.end()
+    }
 }
 
 impl ImageEffect {
@@ -1394,6 +1426,50 @@ fn describe(
     Ok(plugin.descriptor.lock().clone())
 }
 
+fn describe_filter(
+    bundle_name: &str,
+    plugin_name: &str,
+    context: &mut CommandContext,
+) -> Result<(), Box<dyn Error>> {
+    describe(bundle_name, plugin_name, context)?;
+
+    let plugin = context.get_plugin(plugin_name)?;
+
+    // Descriptor for the plugin in Filter context
+    let filter = ImageEffect {
+        properties: PropertySet::new(
+            "filter",
+            [(
+                OfxPluginPropFilePath,
+                plugin.bundle.path.to_str().unwrap().into(),
+            )],
+        )
+        .into_object(),
+        ..Default::default()
+    }
+    .into_object();
+
+    let filter_inargs = PropertySet::new(
+        "filter_inargs",
+        [(
+            OfxImageEffectPropContext,
+            OfxImageEffectContextFilter.into(),
+        )],
+    )
+    .into_object();
+    #[allow(clippy::redundant_clone)]
+    plugin.plugin.try_call_action(
+        OfxImageEffectActionDescribeInContext,
+        filter.clone().into(),
+        OfxPropertySetHandle::from(filter_inargs.clone()),
+        OfxPropertySetHandle::from(std::ptr::null_mut()),
+    )?;
+
+    println!("{}", serde_json::to_string(&*filter.lock())?);
+
+    Ok(())
+}
+
 fn process_command(
     command: &Command,
     context: &mut CommandContext,
@@ -1456,6 +1532,10 @@ fn process_command(
             println!("{}", serde_json::to_string(&*effect.properties.lock())?);
             Ok(())
         }
+        DescribeFilter {
+            bundle_name,
+            plugin_name,
+        } => describe_filter(bundle_name, plugin_name, context),
     }
 }
 
@@ -1485,6 +1565,11 @@ enum CliCommands {
     List { bundle_name: String },
     /// Describe a plugin
     Describe {
+        bundle_name: String,
+        plugin_name: String,
+    },
+    /// DescribeInContext with filter context
+    DescribeFilter {
         bundle_name: String,
         plugin_name: String,
     },
@@ -1571,6 +1656,13 @@ fn main() {
             bundle_name,
             plugin_name,
         } => vec![Command::Describe {
+            bundle_name: bundle_name.clone(),
+            plugin_name: plugin_name.clone(),
+        }],
+        CliCommands::DescribeFilter {
+            bundle_name,
+            plugin_name,
+        } => vec![Command::DescribeFilter {
             bundle_name: bundle_name.clone(),
             plugin_name: plugin_name.clone(),
         }],
