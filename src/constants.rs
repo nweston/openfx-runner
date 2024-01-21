@@ -82,8 +82,11 @@ pub mod image_effect {
     constant!(OfxImageEffectInstancePropEffectDuration);
     constant!(OfxImageEffectInstancePropSequentialRender);
     constant!(OfxImageEffectOutputClipName);
-    constant!(OfxImageEffectPluginApi);
-    constant!(OfxImageEffectPluginApiVersion);
+    // Note: name and string value don't match
+    pub const OfxImageEffectPluginApi: OfxStr =
+        OfxStr::from_str("OfxImageEffectPluginAPI\0");
+    pub const OfxImageEffectPluginApiVersion: u32 = 1;
+
     constant!(OfxImageEffectPluginPropFieldRenderTwiceAlways);
     constant!(OfxImageEffectPluginPropGrouping);
     constant!(OfxImageEffectPluginPropOverlayInteractV1);
