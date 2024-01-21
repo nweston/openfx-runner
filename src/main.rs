@@ -982,8 +982,17 @@ fn get_plugins(lib: &libloading::Library) -> Result<Vec<Plugin>, Box<dyn Error>>
         > = lib.get(b"OfxGetPlugin")?;
         for i in 0..count {
             let p = &*get_plugin(i);
+            let api = OfxStr::from_ptr(p.pluginApi);
+            if api != OfxImageEffectPluginApi {
+                return Err(format!(
+                    "Unknown API '{}' (only '{}' is supported)",
+                    api, OfxImageEffectPluginApi
+                )
+                .into());
+            }
+
             plugins.push(Plugin {
-                plugin_api: OfxStr::from_ptr(p.pluginApi).to_string(),
+                plugin_api: api.to_string(),
                 api_version: p.apiVersion,
                 plugin_identifier: OfxStr::from_ptr(p.pluginIdentifier).to_string(),
                 plugin_version_major: p.pluginVersionMajor,
