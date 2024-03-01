@@ -1,3 +1,4 @@
+use crate::types::OfxRectD;
 use crate::ParamValue;
 use serde::{Deserialize, Serialize};
 
@@ -46,5 +47,10 @@ pub enum Command {
     DescribeFilter {
         bundle_name: String,
         plugin_name: String,
+    },
+    PrintRoIs {
+        instance_name: String,
+        region_of_interest: OfxRectD,
+        project_extent: (f64, f64),
     },
 }

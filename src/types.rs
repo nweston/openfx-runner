@@ -1,5 +1,6 @@
 // Types defined by the OFX API
 #![allow(non_snake_case)]
+use serde::{Deserialize, Serialize};
 
 use std::ffi::{c_char, c_double, c_int, c_uint, c_void};
 
@@ -72,6 +73,7 @@ impl OfxStatus {
 pub type OfxTime = c_double;
 
 #[repr(C)]
+#[derive(Deserialize, Serialize, Debug, Copy, Clone)]
 pub struct OfxRectD {
     pub x1: c_double,
     pub y1: c_double,

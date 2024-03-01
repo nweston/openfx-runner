@@ -37,7 +37,7 @@ pub struct OfxImageEffectSuiteV1 {
     pub clipGetRegionOfDefinition: extern "C" fn(
         clip: OfxImageClipHandle,
         time: OfxTime,
-        bounds: *const OfxRectD,
+        bounds: *mut OfxRectD,
     ) -> OfxStatus,
     pub abort: extern "C" fn(imageEffect: OfxImageEffectHandle) -> c_int,
     pub imageMemoryAlloc: extern "C" fn(

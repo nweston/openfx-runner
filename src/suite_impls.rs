@@ -109,9 +109,18 @@ extern "C" fn clipReleaseImage(_imageHandle: OfxPropertySetHandle) -> OfxStatus 
 extern "C" fn clipGetRegionOfDefinition(
     clip: OfxImageClipHandle,
     time: OfxTime,
-    bounds: *const OfxRectD,
+    bounds: *mut OfxRectD,
 ) -> OfxStatus {
-    panic!("Not implemented!")
+    clip.with_object(|c| {
+        if let Some(rod) = c.region_of_definition {
+            unsafe {
+                *bounds = rod;
+            }
+            OfxStatus::OK
+        } else {
+            OfxStatus::Failed
+        }
+    })
 }
 
 #[allow(unused_variables)]

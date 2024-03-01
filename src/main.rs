@@ -468,6 +468,19 @@ impl Image {
 pub struct Clip {
     properties: Object<PropertySet>,
     image: Option<Image>,
+    region_of_definition: Option<OfxRectD>,
+}
+
+impl Clip {
+    fn set_image(&mut self, image: Image) {
+        self.region_of_definition = Some(OfxRectD {
+            x1: 0.0,
+            y1: 0.0,
+            x2: image.width as f64,
+            y2: image.height as f64,
+        });
+        self.image = Some(image);
+    }
 }
 
 impl Clone for Clip {
@@ -476,6 +489,7 @@ impl Clone for Clip {
         Self {
             properties: self.properties.lock().clone().into_object(),
             image: self.image.clone(),
+            region_of_definition: self.region_of_definition,
         }
     }
 }
@@ -541,6 +555,7 @@ impl ImageEffect {
                 )
                 .into_object(),
                 image: None,
+                region_of_definition: None,
             }
             .into_object(),
         );
@@ -828,6 +843,17 @@ where
     }
 }
 
+impl From<&OfxRectD> for Property {
+    fn from(r: &OfxRectD) -> Self {
+        Property(
+            [r.x1, r.y1, r.x2, r.y2]
+                .into_iter()
+                .map(PropertyValue::from)
+                .collect(),
+        )
+    }
+}
+
 #[derive(Clone, Default, Debug, Serialize)]
 pub struct PropertySet {
     name: String,
@@ -846,22 +872,23 @@ impl PropertySet {
         }
     }
 
-    fn get(&self, key: OfxStr, index: usize) -> Result<&PropertyValue, OfxError> {
+    fn get_all(&self, key: OfxStr) -> Result<&[PropertyValue], OfxError> {
         self.values
             .get(key.as_str())
             .ok_or_else(|| OfxError {
                 message: format!("Property {} not found on {}", key, self.name),
                 status: OfxStatus::ErrUnknown,
             })
-            .and_then(|values| {
-                values.0.get(index).ok_or(OfxError {
-                    message: format!(
-                        "Property {} bad index {} on {}",
-                        key, index, self.name
-                    ),
-                    status: OfxStatus::ErrBadIndex,
-                })
+            .map(|values| values.0.as_slice())
+    }
+
+    fn get(&self, key: OfxStr, index: usize) -> Result<&PropertyValue, OfxError> {
+        self.get_all(key).and_then(|values| {
+            values.get(index).ok_or(OfxError {
+                message: format!("Property {} bad index {} on {}", key, index, self.name),
+                status: OfxStatus::ErrBadIndex,
             })
+        })
     }
 
     /// Get a value and convert to the desired type.
@@ -872,6 +899,29 @@ impl PropertySet {
         T: Clone + From<PropertyValue>,
     {
         self.get(key, index).ok().map(|v| v.clone().into())
+    }
+
+    /// Get all values of a property and return as OfxRectD.
+    fn get_rectd(&self, key: OfxStr) -> Result<OfxRectD, OfxError> {
+        let values = self.get_all(key)?;
+        if values.len() != 4 {
+            Err(OfxError {
+                message: format!(
+                    "Property {} bad length {} on {}",
+                    key,
+                    values.len(),
+                    self.name
+                ),
+                status: OfxStatus::ErrBadIndex,
+            })
+        } else {
+            Ok(OfxRectD {
+                x1: values[0].clone().into(),
+                y1: values[1].clone().into(),
+                x2: values[2].clone().into(),
+                y2: values[3].clone().into(),
+            })
+        }
     }
 
     fn set(&mut self, key: &str, index: usize, value: PropertyValue) {
@@ -1078,9 +1128,13 @@ fn create_images(effect: &mut ImageEffect, input: Image) {
         .values
         .insert(OfxImageEffectPropProjectExtent.to_string(), project_dims);
 
-    effect.clips.get("Source").unwrap().lock().image = Some(input);
-    effect.clips.get("Output").unwrap().lock().image =
-        Some(Image::empty("Output", width, height));
+    effect.clips.get("Source").unwrap().lock().set_image(input);
+    effect
+        .clips
+        .get("Output")
+        .unwrap()
+        .lock()
+        .set_image(Image::empty("Output", width, height));
 }
 
 fn read_exr(name: &str, path: &str) -> Result<Image, Box<dyn Error>> {
@@ -1352,6 +1406,86 @@ fn render_filter(
     Ok(())
 }
 
+// Call GetRegionsOfInterest action, return the RoI for the Source clip
+fn get_rois(
+    instance_name: &str,
+    project_extent: (f64, f64),
+    region_of_interest: &OfxRectD,
+    context: &mut CommandContext,
+) -> Result<OfxRectD, Box<dyn Error>> {
+    let instance = context.get_instance(instance_name)?;
+    let plugin = context.get_plugin(&instance.plugin_name)?;
+
+    let (width, height) = project_extent;
+    let project_dims: Property = [width, height].into();
+
+    // Set effect properties
+    {
+        let effect = &mut instance.effect.lock();
+        effect.properties.lock().values.insert(
+            OfxImageEffectPropProjectSize.to_string(),
+            project_dims.clone(),
+        );
+        effect.properties.lock().values.insert(
+            OfxImageEffectPropProjectOffset.to_string(),
+            [0.0, 0.0].into(),
+        );
+        effect
+            .properties
+            .lock()
+            .values
+            .insert(OfxImageEffectPropProjectExtent.to_string(), project_dims);
+        effect
+            .clips
+            .get("Source")
+            .unwrap()
+            .lock()
+            .region_of_definition = Some(OfxRectD {
+            x1: 0.0,
+            y1: 0.0,
+            x2: width,
+            y2: height,
+        });
+    }
+
+    let roi_prop = OfxStr::from_str("OfxImageClipPropRoI_Source\0");
+
+    let inargs = PropertySet::new(
+        "getRoI_inargs",
+        [
+            (OfxPropTime, (0.0).into()),
+            (OfxImageEffectPropRenderScale, [1.0, 1.0].into()),
+            (
+                OfxImageEffectPropRegionOfInterest,
+                region_of_interest.into(),
+            ),
+            // Not mentioned in the spec, but plugins appear to look
+            // for them in practice
+            (OfxImageEffectPropFieldToRender, OfxImageFieldNone.into()),
+            (
+                OfxImageEffectPropRenderWindow,
+                [0, 0, width as c_int, height as c_int].into(),
+            ),
+        ],
+    )
+    .into_object();
+
+    let outargs =
+        PropertySet::new("getRoI_outargs", [(roi_prop, region_of_interest.into())])
+            .into_object();
+
+    #[allow(clippy::redundant_clone)]
+    plugin.plugin.try_call_action(
+        OfxImageEffectActionGetRegionsOfInterest,
+        instance.effect.clone().into(),
+        OfxPropertySetHandle::from(inargs.clone()),
+        OfxPropertySetHandle::from(outargs.clone()),
+    )?;
+
+    let out = outargs.lock();
+    Ok(out.get_rectd(roi_prop)?)
+}
+
 fn set_params(
     instance_name: &str,
     values: &[(String, ParamValue)],
@@ -1545,6 +1679,16 @@ fn process_command(
             bundle_name,
             plugin_name,
         } => describe_filter(bundle_name, plugin_name, context),
+        PrintRoIs {
+            instance_name,
+            region_of_interest,
+            project_extent,
+        } => {
+            let roi =
+                get_rois(instance_name, *project_extent, region_of_interest, context)?;
+            println!("{}", serde_json::to_string(&roi)?);
+            Ok(())
+        }
     }
 }
 
