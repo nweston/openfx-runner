@@ -53,4 +53,9 @@ pub enum Command {
         region_of_interest: OfxRectD,
         project_extent: (f64, f64),
     },
+    PrintRoD {
+        instance_name: String,
+        input_rod: OfxRectD,
+        project_extent: (f64, f64),
+    },
 }

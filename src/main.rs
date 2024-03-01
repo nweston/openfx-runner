@@ -1486,6 +1486,78 @@ fn get_rois(
     Ok(out.get_rectd(roi_prop)?)
 }
 
+// Call GetRegionOfDefinition action and return the resulting RoD
+fn get_rod(
+    instance_name: &str,
+    project_extent: (f64, f64),
+    input_rod: &OfxRectD,
+    context: &mut CommandContext,
+) -> Result<OfxRectD, Box<dyn Error>> {
+    let instance = context.get_instance(instance_name)?;
+    let plugin = context.get_plugin(&instance.plugin_name)?;
+
+    let (width, height) = project_extent;
+    let project_dims: Property = [width, height].into();
+
+    // Set effect properties
+    {
+        let effect = &mut instance.effect.lock();
+        effect.properties.lock().values.insert(
+            OfxImageEffectPropProjectSize.to_string(),
+            project_dims.clone(),
+        );
+        effect.properties.lock().values.insert(
+            OfxImageEffectPropProjectOffset.to_string(),
+            [0.0, 0.0].into(),
+        );
+        effect
+            .properties
+            .lock()
+            .values
+            .insert(OfxImageEffectPropProjectExtent.to_string(), project_dims);
+        effect
+            .clips
+            .get("Source")
+            .unwrap()
+            .lock()
+            .region_of_definition = Some(*input_rod);
+    }
+
+    let inargs = PropertySet::new(
+        "getRoD_inargs",
+        [
+            (OfxPropTime, (0.0).into()),
+            (OfxImageEffectPropRenderScale, [1.0, 1.0].into()),
+            // Not mentioned in the spec, but plugins appear to look
+            // for them in practice
+            (OfxImageEffectPropFieldToRender, OfxImageFieldNone.into()),
+            (
+                OfxImageEffectPropRenderWindow,
+                [0, 0, width as c_int, height as c_int].into(),
+            ),
+        ],
+    )
+    .into_object();
+
+    let outargs = PropertySet::new(
+        "getRoD_outargs",
+        [(OfxImageEffectPropRegionOfDefinition, input_rod.into())],
+    )
+    .into_object();
+
+    #[allow(clippy::redundant_clone)]
+    plugin.plugin.try_call_action(
+        OfxImageEffectActionGetRegionOfDefinition,
+        instance.effect.clone().into(),
+        OfxPropertySetHandle::from(inargs.clone()),
+        OfxPropertySetHandle::from(outargs.clone()),
+    )?;
+
+    let out = outargs.lock();
+    // Ok(out.get_rectd(roi_prop)?)
+    Ok(out.get_rectd(OfxImageEffectPropRegionOfDefinition)?)
+}
+
 fn set_params(
     instance_name: &str,
     values: &[(String, ParamValue)],
@@ -1687,6 +1759,15 @@ fn process_command(
             let roi =
                 get_rois(instance_name, *project_extent, region_of_interest, context)?;
             println!("{}", serde_json::to_string(&roi)?);
+            Ok(())
+        }
+        PrintRoD {
+            instance_name,
+            input_rod,
+            project_extent,
+        } => {
+            let rod = get_rod(instance_name, *project_extent, input_rod, context)?;
+            println!("{}", serde_json::to_string(&rod)?);
             Ok(())
         }
     }
