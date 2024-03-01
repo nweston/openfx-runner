@@ -1417,25 +1417,13 @@ fn get_rois(
     let plugin = context.get_plugin(&instance.plugin_name)?;
 
     let (width, height) = project_extent;
-    let project_dims: Property = [width, height].into();
 
     // Set effect properties
+    set_project_props(instance, width, height);
     {
-        let effect = &mut instance.effect.lock();
-        effect.properties.lock().values.insert(
-            OfxImageEffectPropProjectSize.to_string(),
-            project_dims.clone(),
-        );
-        effect.properties.lock().values.insert(
-            OfxImageEffectPropProjectOffset.to_string(),
-            [0.0, 0.0].into(),
-        );
-        effect
-            .properties
+        instance
+            .effect
             .lock()
-            .values
-            .insert(OfxImageEffectPropProjectExtent.to_string(), project_dims);
-        effect
             .clips
             .get("Source")
             .unwrap()
@@ -1486,6 +1474,23 @@ fn get_rois(
     Ok(out.get_rectd(roi_prop)?)
 }
 
+fn set_project_props(instance: &Instance, width: f64, height: f64) {
+    let effect = &mut instance.effect.lock();
+    let mut props = effect.properties.lock();
+    props.values.insert(
+        OfxImageEffectPropProjectSize.to_string(),
+        [width, height].into(),
+    );
+    props.values.insert(
+        OfxImageEffectPropProjectOffset.to_string(),
+        [0.0, 0.0].into(),
+    );
+    props.values.insert(
+        OfxImageEffectPropProjectExtent.to_string(),
+        [width, height].into(),
+    );
+}
+
 // Call GetRegionOfDefinition action and return the resulting RoD
 fn get_rod(
     instance_name: &str,
@@ -1497,25 +1502,13 @@ fn get_rod(
     let plugin = context.get_plugin(&instance.plugin_name)?;
 
     let (width, height) = project_extent;
-    let project_dims: Property = [width, height].into();
 
     // Set effect properties
+    set_project_props(instance, width, height);
     {
-        let effect = &mut instance.effect.lock();
-        effect.properties.lock().values.insert(
-            OfxImageEffectPropProjectSize.to_string(),
-            project_dims.clone(),
-        );
-        effect.properties.lock().values.insert(
-            OfxImageEffectPropProjectOffset.to_string(),
-            [0.0, 0.0].into(),
-        );
-        effect
-            .properties
+        instance
+            .effect
             .lock()
-            .values
-            .insert(OfxImageEffectPropProjectExtent.to_string(), project_dims);
-        effect
             .clips
             .get("Source")
             .unwrap()
