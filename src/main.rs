@@ -1700,7 +1700,10 @@ fn process_command(
         } => render_filter(instance_name, input_file, output_file, context),
         PrintParams { instance_name } => {
             let instance = context.get_instance(instance_name)?;
-            println!("{:?}", instance.effect.lock().param_set);
+            println!(
+                "{}",
+                serde_json::to_string(&*instance.effect.lock().param_set.lock())?
+            );
             Ok(())
         }
         DestroyInstance { instance_name } => {
