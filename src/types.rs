@@ -88,6 +88,15 @@ pub struct OfxRangeD {
 }
 
 #[repr(C)]
+#[derive(Deserialize, Serialize, Debug, Copy, Clone)]
+pub struct OfxRectI {
+    pub x1: c_int,
+    pub y1: c_int,
+    pub x2: c_int,
+    pub y2: c_int,
+}
+
+#[repr(C)]
 pub struct OfxHost {
     pub host: OfxPropertySetHandle,
     pub fetchSuite:
