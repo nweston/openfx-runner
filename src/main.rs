@@ -255,6 +255,31 @@ impl Error for OfxError {
     }
 }
 
+trait Rect {
+    fn width(&self) -> usize;
+    fn height(&self) -> usize;
+}
+
+impl Rect for OfxRectD {
+    fn width(&self) -> usize {
+        (self.x2 - self.x1) as usize
+    }
+
+    fn height(&self) -> usize {
+        (self.y2 - self.y1) as usize
+    }
+}
+
+impl Rect for OfxRectI {
+    fn width(&self) -> usize {
+        (self.x2 - self.x1) as usize
+    }
+
+    fn height(&self) -> usize {
+        (self.y2 - self.y1) as usize
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "type", content = "v")]
 pub enum ParamValue {
