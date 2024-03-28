@@ -280,6 +280,17 @@ impl Rect for OfxRectI {
     }
 }
 
+impl OfxRectI {
+    fn from_dims(width: usize, height: usize) -> Self {
+        Self {
+            x1: 0,
+            y1: 0,
+            x2: width as _,
+            y2: height as _,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "type", content = "v")]
 pub enum ParamValue {
@@ -447,7 +458,7 @@ pub struct Image {
 }
 
 impl Image {
-    fn new(name: &str, width: usize, height: usize, mut pixels: Vec<Pixel>) -> Self {
+    fn new(name: &str, bounds: &OfxRectI, mut pixels: Vec<Pixel>) -> Self {
         let properties = PropertySet::new(
             &format!("{}_image", name),
             [
@@ -464,28 +475,28 @@ impl Image {
                     OfxImagePropData,
                     (pixels.as_mut_ptr() as *mut c_void).into(),
                 ),
-                (OfxImagePropBounds, [0, 0, width, height].into()),
-                (OfxImagePropRegionOfDefinition, [0, 0, width, height].into()),
+                (OfxImagePropBounds, bounds.into()),
+                (OfxImagePropRegionOfDefinition, bounds.into()),
                 (
                     OfxImagePropRowBytes,
-                    (width * std::mem::size_of::<Pixel>()).into(),
+                    (bounds.width() * std::mem::size_of::<Pixel>()).into(),
                 ),
                 (OfxImagePropField, OfxImageFieldNone.into()),
             ],
         )
         .into_object();
         Self {
-            width,
-            height,
+            width: bounds.width(),
+            height: bounds.height(),
             pixels,
             properties,
         }
     }
 
-    fn empty(name: &str, width: usize, height: usize) -> Self {
+    fn empty(name: &str, bounds: &OfxRectI) -> Self {
         let mut pixels = Vec::new();
-        pixels.resize(width * height, Pixel::zero());
-        Self::new(name, width, height, pixels)
+        pixels.resize(bounds.width() * bounds.height(), Pixel::zero());
+        Self::new(name, bounds, pixels)
     }
 }
 
@@ -879,6 +890,17 @@ impl From<&OfxRectD> for Property {
     }
 }
 
+impl From<&OfxRectI> for Property {
+    fn from(r: &OfxRectI) -> Self {
+        Property(
+            [r.x1, r.y1, r.x2, r.y2]
+                .into_iter()
+                .map(PropertyValue::from)
+                .collect(),
+        )
+    }
+}
+
 #[derive(Clone, Default, Debug, Serialize)]
 pub struct PropertySet {
     name: String,
@@ -1139,7 +1161,7 @@ fn create_instance(descriptor: &ImageEffect, context: &str) -> ImageEffect {
     }
 }
 
-fn create_images(effect: &mut ImageEffect, input: Image) {
+fn create_images(effect: &mut ImageEffect, input: Image, output_rect: &OfxRectI) {
     let width = input.width;
     let height = input.height;
     let project_dims: Property = [(width as f64), (height as f64)].into();
@@ -1159,7 +1181,7 @@ fn create_images(effect: &mut ImageEffect, input: Image) {
         .get("Output")
         .unwrap()
         .lock()
-        .set_image(Image::empty("Output", width, height));
+        .set_image(Image::empty("Output", output_rect));
 }
 
 fn read_exr(name: &str, path: &str) -> Result<Image, Box<dyn Error>> {
@@ -1194,7 +1216,11 @@ fn read_exr(name: &str, path: &str) -> Result<Image, Box<dyn Error>> {
     .pixels; // Get the pixel storage we constructed
 
     // Discard the exr image struct and build our own
-    Ok(Image::new(name, width, height, pixels))
+    Ok(Image::new(
+        name,
+        &OfxRectI::from_dims(width, height),
+        pixels,
+    ))
 }
 
 fn write_exr(filename: &str, image: Image) -> Result<(), Box<dyn Error>> {
@@ -1384,21 +1410,29 @@ fn render_filter(
     instance_name: &str,
     input_file: &str,
     output_file: &str,
+    render_window: Option<OfxRectI>,
     context: &mut CommandContext,
 ) -> Result<(), Box<dyn Error>> {
     let instance = context.get_instance(instance_name)?;
     let plugin = context.get_plugin(&instance.plugin_name)?;
+
     let input = read_exr("input", input_file)?;
     let width = input.width;
     let height = input.height;
+    let output_rect = render_window.unwrap_or(OfxRectI {
+        x1: 0,
+        y1: 0,
+        x2: width as c_int,
+        y2: height as c_int,
+    });
 
-    create_images(&mut instance.effect.lock(), input);
+    create_images(&mut instance.effect.lock(), input, &output_rect);
     let render_inargs = PropertySet::new(
         "render_inargs",
         [
             (OfxPropTime, (0.0).into()),
             (OfxImageEffectPropFieldToRender, OfxImageFieldNone.into()),
-            (OfxImageEffectPropRenderWindow, [0, 0, width, height].into()),
+            (OfxImageEffectPropRenderWindow, (&output_rect).into()),
             (OfxImageEffectPropRenderScale, [1.0, 1.0].into()),
             (OfxImageEffectPropSequentialRenderStatus, false.into()),
             (OfxImageEffectPropInteractiveRenderStatus, false.into()),
@@ -1722,7 +1756,14 @@ fn process_command(
             instance_name,
             input_file,
             output_file,
-        } => render_filter(instance_name, input_file, output_file, context),
+            render_window,
+        } => render_filter(
+            instance_name,
+            input_file,
+            output_file,
+            *render_window,
+            context,
+        ),
         PrintParams { instance_name } => {
             let instance = context.get_instance(instance_name)?;
             println!(

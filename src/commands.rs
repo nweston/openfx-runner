@@ -1,4 +1,4 @@
-use crate::types::OfxRectD;
+use crate::types::{OfxRectD, OfxRectI};
 use crate::ParamValue;
 use serde::{Deserialize, Serialize};
 
@@ -22,6 +22,7 @@ pub enum Command {
         instance_name: String,
         input_file: String,
         output_file: String,
+        render_window: Option<OfxRectI>,
     },
     /// Print params of an effect instance.
     PrintParams { instance_name: String },
