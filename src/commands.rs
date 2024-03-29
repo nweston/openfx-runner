@@ -3,6 +3,13 @@ use crate::ParamValue;
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize)]
+pub struct RenderLayout {
+    pub project_dims: (f64, f64),
+    pub input_origin: (i32, i32),
+    pub render_window: OfxRectI,
+}
+
+#[derive(Deserialize, Serialize)]
 #[serde(tag = "type")]
 pub enum Command {
     /// Load a bundle, find and describe a plugin.
@@ -22,7 +29,7 @@ pub enum Command {
         instance_name: String,
         input_file: String,
         output_file: String,
-        render_window: Option<OfxRectI>,
+        layout: Option<RenderLayout>,
     },
     /// Print params of an effect instance.
     PrintParams { instance_name: String },

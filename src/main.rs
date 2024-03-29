@@ -1161,10 +1161,12 @@ fn create_instance(descriptor: &ImageEffect, context: &str) -> ImageEffect {
     }
 }
 
-fn create_images(effect: &mut ImageEffect, input: Image, output_rect: &OfxRectI) {
-    let width = input.width;
-    let height = input.height;
-    let project_dims: Property = [(width as f64), (height as f64)].into();
+fn create_images(
+    effect: &mut ImageEffect,
+    input: Image,
+    project_dims: Property,
+    output_rect: &OfxRectI,
+) {
     effect.properties.lock().values.insert(
         OfxImageEffectPropProjectSize.to_string(),
         project_dims.clone(),
@@ -1184,7 +1186,7 @@ fn create_images(effect: &mut ImageEffect, input: Image, output_rect: &OfxRectI)
         .set_image(Image::empty("Output", output_rect));
 }
 
-fn read_exr(name: &str, path: &str) -> Result<Image, Box<dyn Error>> {
+fn read_exr(name: &str, path: &str, origin: (i32, i32)) -> Result<Image, Box<dyn Error>> {
     let (width, height, pixels) = read_first_rgba_layer_from_file(
         path,
         // Construct pixel storage. We use a tuple which includes
@@ -1215,12 +1217,16 @@ fn read_exr(name: &str, path: &str) -> Result<Image, Box<dyn Error>> {
     .channel_data
     .pixels; // Get the pixel storage we constructed
 
+    let (x1, y1) = origin;
+    let bounds = OfxRectI {
+        x1,
+        y1,
+        x2: x1 + width as i32,
+        y2: y1 + height as i32,
+    };
+
     // Discard the exr image struct and build our own
-    Ok(Image::new(
-        name,
-        &OfxRectI::from_dims(width, height),
-        pixels,
-    ))
+    Ok(Image::new(name, &bounds, pixels))
 }
 
 fn write_exr(filename: &str, image: Image) -> Result<(), Box<dyn Error>> {
@@ -1410,23 +1416,34 @@ fn render_filter(
     instance_name: &str,
     input_file: &str,
     output_file: &str,
-    render_window: Option<OfxRectI>,
+    layout: Option<&RenderLayout>,
     context: &mut CommandContext,
 ) -> Result<(), Box<dyn Error>> {
+    let input_origin = layout.map(|l| l.input_origin).unwrap_or((0, 0));
+
     let instance = context.get_instance(instance_name)?;
     let plugin = context.get_plugin(&instance.plugin_name)?;
 
-    let input = read_exr("input", input_file)?;
+    let input = read_exr("input", input_file, input_origin)?;
     let width = input.width;
     let height = input.height;
-    let output_rect = render_window.unwrap_or(OfxRectI {
-        x1: 0,
-        y1: 0,
-        x2: width as c_int,
-        y2: height as c_int,
-    });
 
-    create_images(&mut instance.effect.lock(), input, &output_rect);
+    // If no layout is given, default project dims and output to match
+    // the input image
+    let project_dims = layout
+        .map(|l| [l.project_dims.0, l.project_dims.1])
+        .unwrap_or([(width as f64), (height as f64)]);
+    let output_rect = layout
+        .map(|l| l.render_window)
+        .unwrap_or(OfxRectI::from_dims(width, height));
+
+    create_images(
+        &mut instance.effect.lock(),
+        input,
+        project_dims.into(),
+        &output_rect,
+    );
+
     let render_inargs = PropertySet::new(
         "render_inargs",
         [
@@ -1756,12 +1773,12 @@ fn process_command(
             instance_name,
             input_file,
             output_file,
-            render_window,
+            layout,
         } => render_filter(
             instance_name,
             input_file,
             output_file,
-            *render_window,
+            layout.as_ref(),
             context,
         ),
         PrintParams { instance_name } => {
