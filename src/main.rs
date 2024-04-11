@@ -1473,7 +1473,7 @@ fn create_filter(
 fn render_filter(
     instance_name: &str,
     input_file: &str,
-    output_directory: &str,
+    output_directory: Option<&String>,
     layout: Option<&RenderLayout>,
     frame_range: (FrameNumber, FrameNumber),
     thread_count: u32,
@@ -1563,23 +1563,25 @@ fn render_filter(
         })?
     }
 
-    std::fs::create_dir_all(output_directory)?;
-    for frame in frame_min..frame_limit {
-        let format_width = (frame_limit.ilog10() + 1) as usize;
-        write_exr(
-            &format!("{output_directory}/{frame:0format_width$}.exr"),
-            instance
-                .effect
-                .lock()
-                .clips
-                .get("Output")
-                .unwrap()
-                .lock()
-                .images
-                .image_at_frame(FrameNumber(frame))
-                .unwrap()
-                .clone(),
-        )?;
+    if let Some(output_directory) = output_directory {
+        std::fs::create_dir_all(output_directory)?;
+        for frame in frame_min..frame_limit {
+            let format_width = (frame_limit.ilog10() + 1) as usize;
+            write_exr(
+                &format!("{output_directory}/{frame:0format_width$}.exr"),
+                instance
+                    .effect
+                    .lock()
+                    .clips
+                    .get("Output")
+                    .unwrap()
+                    .lock()
+                    .images
+                    .image_at_frame(FrameNumber(frame))
+                    .unwrap()
+                    .clone(),
+            )?;
+        }
     }
     Ok(())
 }
@@ -1878,7 +1880,7 @@ fn process_command(command: &Command, context: &mut CommandContext) -> GenericRe
         } => render_filter(
             instance_name,
             input_file,
-            output_directory,
+            output_directory.as_ref(),
             layout.as_ref(),
             *frame_range,
             *thread_count,

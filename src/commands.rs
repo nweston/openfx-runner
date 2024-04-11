@@ -32,7 +32,7 @@ pub enum Command {
     RenderFilter {
         instance_name: String,
         input_file: String,
-        output_directory: String,
+        output_directory: Option<String>,
         layout: Option<RenderLayout>,
         #[serde(default = "default_frame_range")]
         frame_range: (FrameNumber, FrameNumber),
