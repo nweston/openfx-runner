@@ -1988,7 +1988,7 @@ fn main() {
         // Otherwise read commands from file
         CliCommands::Run { ref command_file } => read_commands(command_file)
             .unwrap_or_else(|e| {
-                eprintln!("{}", e);
+                eprintln!("{}: {}", e, e.source);
                 std::process::exit(64);
             }),
     };
