@@ -70,7 +70,9 @@ impl OfxStatus {
     }
 }
 
-pub type OfxTime = c_double;
+#[repr(C)]
+#[derive(Deserialize, Serialize, Debug, Copy, Clone)]
+pub struct OfxTime(pub c_double);
 
 #[repr(C)]
 #[derive(Deserialize, Serialize, Debug, Copy, Clone)]

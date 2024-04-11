@@ -754,6 +754,12 @@ impl From<f64> for PropertyValue {
     }
 }
 
+impl From<OfxTime> for PropertyValue {
+    fn from(OfxTime(i): OfxTime) -> Self {
+        PropertyValue::Double(i)
+    }
+}
+
 impl From<*mut c_void> for PropertyValue {
     fn from(i: *mut c_void) -> Self {
         PropertyValue::Pointer(Addr(i))
