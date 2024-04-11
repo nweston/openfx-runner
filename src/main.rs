@@ -8,6 +8,7 @@ use std::ffi::{c_char, c_int, c_void, CString};
 use std::fs;
 use std::string::String;
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
+use std::thread;
 
 mod commands;
 use commands::*;
@@ -1473,6 +1474,7 @@ fn render_filter(
     output_directory: &str,
     layout: Option<&RenderLayout>,
     frame_range: (FrameNumber, FrameNumber),
+    thread_count: u32,
     context: &mut CommandContext,
 ) -> Result<(), Box<dyn Error>> {
     let (FrameNumber(frame_min), FrameNumber(frame_limit)) = frame_range;
@@ -1507,28 +1509,56 @@ fn render_filter(
         frame_limit,
     );
 
-    for frame in frame_min..frame_limit {
-        let render_inargs = PropertySet::new(
-            "render_inargs",
-            [
-                (OfxPropTime, (frame as f64).into()),
-                (OfxImageEffectPropFieldToRender, OfxImageFieldNone.into()),
-                (OfxImageEffectPropRenderWindow, (&output_rect).into()),
-                (OfxImageEffectPropRenderScale, [1.0, 1.0].into()),
-                (OfxImageEffectPropSequentialRenderStatus, false.into()),
-                (OfxImageEffectPropInteractiveRenderStatus, false.into()),
-                (OfxImageEffectPropRenderQualityDraft, false.into()),
-            ],
-        )
-        .into_object();
+    let render_range = move |start, limit| -> Result<(), Box<dyn Error>> {
+        for frame in start..limit {
+            let render_inargs = PropertySet::new(
+                "render_inargs",
+                [
+                    (OfxPropTime, (frame as f64).into()),
+                    (OfxImageEffectPropFieldToRender, OfxImageFieldNone.into()),
+                    (OfxImageEffectPropRenderWindow, (&output_rect).into()),
+                    (OfxImageEffectPropRenderScale, [1.0, 1.0].into()),
+                    (OfxImageEffectPropSequentialRenderStatus, false.into()),
+                    (OfxImageEffectPropInteractiveRenderStatus, false.into()),
+                    (OfxImageEffectPropRenderQualityDraft, false.into()),
+                ],
+            )
+            .into_object();
 
-        #[allow(clippy::redundant_clone)]
-        plugin.plugin.try_call_action(
-            OfxImageEffectActionRender,
-            instance.effect.clone().into(),
-            OfxPropertySetHandle::from(render_inargs.clone()),
-            OfxPropertySetHandle::from(std::ptr::null_mut()),
-        )?;
+            #[allow(clippy::redundant_clone)]
+            plugin.plugin.try_call_action(
+                OfxImageEffectActionRender,
+                instance.effect.clone().into(),
+                OfxPropertySetHandle::from(render_inargs.clone()),
+                OfxPropertySetHandle::from(std::ptr::null_mut()),
+            )?;
+        }
+        Ok(())
+    };
+    if thread_count <= 1 {
+        render_range(frame_min, frame_limit)?;
+    } else {
+        let chunk_size =
+            ((frame_limit - frame_min) as f32 / thread_count as f32).ceil() as u32;
+
+        thread::scope(|s| -> Result<(), Box<dyn Error>> {
+            let threads = (0..thread_count)
+                .map(|i| {
+                    let min = i * chunk_size;
+                    let limit = (min + chunk_size).min(frame_limit);
+                    // If render fails, convert error to a string so
+                    // we can send it across threads
+                    s.spawn(move || render_range(min, limit).map_err(|e| e.to_string()))
+                })
+                .collect::<Vec<_>>();
+
+            for t in threads {
+                // Unwrapping the join result gives us the Result returned by
+                // the closure. Propagate any error it contains.
+                t.join().unwrap()?;
+            }
+            Ok(())
+        })?
     }
 
     std::fs::create_dir_all(output_directory)?;
@@ -1845,12 +1875,14 @@ fn process_command(
             output_directory,
             layout,
             frame_range,
+            thread_count,
         } => render_filter(
             instance_name,
             input_file,
             output_directory,
             layout.as_ref(),
             *frame_range,
+            *thread_count,
             context,
         ),
         PrintParams { instance_name } => {

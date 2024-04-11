@@ -36,6 +36,8 @@ pub enum Command {
         layout: Option<RenderLayout>,
         #[serde(default = "default_frame_range")]
         frame_range: (FrameNumber, FrameNumber),
+        #[serde(default)]
+        thread_count: u32,
     },
     /// Print params of an effect instance.
     PrintParams { instance_name: String },
