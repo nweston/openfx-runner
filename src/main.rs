@@ -28,6 +28,10 @@ use types::*;
 mod strings;
 use strings::OfxStr;
 
+/// An integer frame time
+#[derive(Deserialize, Serialize, Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub struct FrameNumber(u32);
+
 /// Holder for objects which can cross the API boundary.
 ///
 /// Essentially an Arc<Mutex<T>> with some convenience
@@ -500,10 +504,35 @@ impl Image {
     }
 }
 
+#[derive(Debug, Clone)]
+enum ClipImages {
+    NoImage,
+    Static(Image),
+    Sequence(HashMap<FrameNumber, Image>),
+}
+
+impl ClipImages {
+    fn image_at_time(&self, time: OfxTime) -> Option<&Image> {
+        if time.0 >= 0.0 {
+            self.image_at_frame(FrameNumber(time.0 as u32))
+        } else {
+            None
+        }
+    }
+
+    fn image_at_frame(&self, frame: FrameNumber) -> Option<&Image> {
+        match self {
+            ClipImages::Static(ref image) => Some(image),
+            ClipImages::Sequence(m) => m.get(&frame),
+            ClipImages::NoImage => None,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Clip {
     properties: Object<PropertySet>,
-    image: Option<Image>,
+    images: ClipImages,
     region_of_definition: Option<OfxRectD>,
 }
 
@@ -515,7 +544,22 @@ impl Clip {
             x2: image.width as f64,
             y2: image.height as f64,
         });
-        self.image = Some(image);
+        self.images = ClipImages::Static(image);
+    }
+
+    fn set_images(
+        &mut self,
+        width: usize,
+        height: usize,
+        images: HashMap<FrameNumber, Image>,
+    ) {
+        self.region_of_definition = Some(OfxRectD {
+            x1: 0.0,
+            y1: 0.0,
+            x2: width as f64,
+            y2: height as f64,
+        });
+        self.images = ClipImages::Sequence(images);
     }
 }
 
@@ -524,7 +568,7 @@ impl Clone for Clip {
         // Deep copy the properties
         Self {
             properties: self.properties.lock().clone().into_object(),
-            image: self.image.clone(),
+            images: self.images.clone(),
             region_of_definition: self.region_of_definition,
         }
     }
@@ -590,7 +634,7 @@ impl ImageEffect {
                     ],
                 )
                 .into_object(),
-                image: None,
+                images: ClipImages::NoImage,
                 region_of_definition: None,
             }
             .into_object(),
@@ -1172,6 +1216,8 @@ fn create_images(
     input: Image,
     project_dims: Property,
     output_rect: &OfxRectI,
+    frame_min: u32,
+    frame_limit: u32,
 ) {
     effect.properties.lock().values.insert(
         OfxImageEffectPropProjectSize.to_string(),
@@ -1184,12 +1230,15 @@ fn create_images(
         .insert(OfxImageEffectPropProjectExtent.to_string(), project_dims);
 
     effect.clips.get("Source").unwrap().lock().set_image(input);
-    effect
-        .clips
-        .get("Output")
-        .unwrap()
-        .lock()
-        .set_image(Image::empty("Output", output_rect));
+    let mut output = effect.clips.get("Output").unwrap().lock();
+
+    output.set_images(
+        output_rect.width(),
+        output_rect.height(),
+        (frame_min..frame_limit)
+            .map(|f| (FrameNumber(f), Image::empty("Output", output_rect)))
+            .collect(),
+    );
 }
 
 fn read_exr(name: &str, path: &str, origin: (i32, i32)) -> Result<Image, Box<dyn Error>> {
@@ -1421,10 +1470,16 @@ fn create_filter(
 fn render_filter(
     instance_name: &str,
     input_file: &str,
-    output_file: &str,
+    output_directory: &str,
     layout: Option<&RenderLayout>,
+    frame_range: (FrameNumber, FrameNumber),
     context: &mut CommandContext,
 ) -> Result<(), Box<dyn Error>> {
+    let (FrameNumber(frame_min), FrameNumber(frame_limit)) = frame_range;
+    if frame_limit <= frame_min {
+        return Err(format!("Invalid frame range {frame_min}..{frame_limit}").into());
+    }
+
     let input_origin = layout.map(|l| l.input_origin).unwrap_or((0, 0));
 
     let instance = context.get_instance(instance_name)?;
@@ -1448,43 +1503,52 @@ fn render_filter(
         input,
         project_dims.into(),
         &output_rect,
+        frame_min,
+        frame_limit,
     );
 
-    let render_inargs = PropertySet::new(
-        "render_inargs",
-        [
-            (OfxPropTime, (0.0).into()),
-            (OfxImageEffectPropFieldToRender, OfxImageFieldNone.into()),
-            (OfxImageEffectPropRenderWindow, (&output_rect).into()),
-            (OfxImageEffectPropRenderScale, [1.0, 1.0].into()),
-            (OfxImageEffectPropSequentialRenderStatus, false.into()),
-            (OfxImageEffectPropInteractiveRenderStatus, false.into()),
-            (OfxImageEffectPropRenderQualityDraft, false.into()),
-        ],
-    )
-    .into_object();
+    for frame in frame_min..frame_limit {
+        let render_inargs = PropertySet::new(
+            "render_inargs",
+            [
+                (OfxPropTime, (frame as f64).into()),
+                (OfxImageEffectPropFieldToRender, OfxImageFieldNone.into()),
+                (OfxImageEffectPropRenderWindow, (&output_rect).into()),
+                (OfxImageEffectPropRenderScale, [1.0, 1.0].into()),
+                (OfxImageEffectPropSequentialRenderStatus, false.into()),
+                (OfxImageEffectPropInteractiveRenderStatus, false.into()),
+                (OfxImageEffectPropRenderQualityDraft, false.into()),
+            ],
+        )
+        .into_object();
 
-    #[allow(clippy::redundant_clone)]
-    plugin.plugin.try_call_action(
-        OfxImageEffectActionRender,
-        instance.effect.clone().into(),
-        OfxPropertySetHandle::from(render_inargs.clone()),
-        OfxPropertySetHandle::from(std::ptr::null_mut()),
-    )?;
-    write_exr(
-        output_file,
-        instance
-            .effect
-            .lock()
-            .clips
-            .get("Output")
-            .unwrap()
-            .lock()
-            .image
-            .as_ref()
-            .unwrap()
-            .clone(),
-    )?;
+        #[allow(clippy::redundant_clone)]
+        plugin.plugin.try_call_action(
+            OfxImageEffectActionRender,
+            instance.effect.clone().into(),
+            OfxPropertySetHandle::from(render_inargs.clone()),
+            OfxPropertySetHandle::from(std::ptr::null_mut()),
+        )?;
+    }
+
+    std::fs::create_dir_all(output_directory)?;
+    for frame in frame_min..frame_limit {
+        let format_width = (frame_limit.ilog10() + 1) as usize;
+        write_exr(
+            &format!("{output_directory}/{frame:0format_width$}.exr"),
+            instance
+                .effect
+                .lock()
+                .clips
+                .get("Output")
+                .unwrap()
+                .lock()
+                .images
+                .image_at_frame(FrameNumber(frame))
+                .unwrap()
+                .clone(),
+        )?;
+    }
     Ok(())
 }
 
@@ -1778,13 +1842,15 @@ fn process_command(
         RenderFilter {
             instance_name,
             input_file,
-            output_file,
+            output_directory,
             layout,
+            frame_range,
         } => render_filter(
             instance_name,
             input_file,
-            output_file,
+            output_directory,
             layout.as_ref(),
+            *frame_range,
             context,
         ),
         PrintParams { instance_name } => {

@@ -84,12 +84,12 @@ extern "C" fn clipGetPropertySet(
 #[allow(unused_variables)]
 extern "C" fn clipGetImage(
     clip: OfxImageClipHandle,
-    _time: OfxTime,
+    time: OfxTime,
     _region: *const OfxRectD,
     imageHandle: *mut OfxPropertySetHandle,
 ) -> OfxStatus {
     clip.with_object(|c| {
-        if let Some(ref image) = c.image {
+        if let Some(ref image) = c.images.image_at_time(time) {
             unsafe {
                 *imageHandle = image.properties.clone().into();
             }

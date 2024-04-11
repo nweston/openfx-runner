@@ -1,5 +1,5 @@
 use crate::types::{OfxRectD, OfxRectI};
-use crate::ParamValue;
+use crate::{FrameNumber, ParamValue};
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize)]
@@ -7,6 +7,10 @@ pub struct RenderLayout {
     pub project_dims: (f64, f64),
     pub input_origin: (i32, i32),
     pub render_window: OfxRectI,
+}
+
+fn default_frame_range() -> (FrameNumber, FrameNumber) {
+    (FrameNumber(0), FrameNumber(1))
 }
 
 #[derive(Deserialize, Serialize)]
@@ -28,8 +32,10 @@ pub enum Command {
     RenderFilter {
         instance_name: String,
         input_file: String,
-        output_file: String,
+        output_directory: String,
         layout: Option<RenderLayout>,
+        #[serde(default = "default_frame_range")]
+        frame_range: (FrameNumber, FrameNumber),
     },
     /// Print params of an effect instance.
     PrintParams { instance_name: String },
