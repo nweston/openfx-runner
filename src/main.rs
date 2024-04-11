@@ -193,6 +193,8 @@ impl_handle!(OfxPropertySetHandle, PropertySet);
 impl_handle!(OfxImageClipHandle, Clip);
 impl_handle!(OfxParamHandle, Param);
 
+type GenericResult = Result<(), Box<dyn Error>>;
+
 #[derive(Debug)]
 struct GenericError {
     message: String,
@@ -1285,7 +1287,7 @@ fn read_exr(name: &str, path: &str, origin: (i32, i32)) -> Result<Image, Box<dyn
     Ok(Image::new(name, &bounds, pixels))
 }
 
-fn write_exr(filename: &str, image: Image) -> Result<(), Box<dyn Error>> {
+fn write_exr(filename: &str, image: Image) -> GenericResult {
     write_rgba_file(filename, image.width, image.height, |x, y| {
         // Flip y and convert to flat index
         let pixel = &image.pixels[(image.height - 1 - y) * image.width + x];
@@ -1341,7 +1343,7 @@ fn load_bundle(
     Ok((bundle, lib))
 }
 
-fn list_plugins(bundle_name: &str) -> Result<(), Box<dyn Error>> {
+fn list_plugins(bundle_name: &str) -> GenericResult {
     let (_, lib) = load_bundle(bundle_name)?;
     for (i, p) in get_plugins(&lib)?.into_iter().enumerate() {
         println!(
@@ -1356,7 +1358,7 @@ fn create_plugin(
     bundle_name: &str,
     plugin_name: &str,
     context: &mut CommandContext,
-) -> Result<(), Box<dyn Error>> {
+) -> GenericResult {
     let (bundle, lib) = load_bundle(bundle_name)?;
     let plugin = get_plugins(&lib)?
         .into_iter()
@@ -1394,7 +1396,7 @@ fn create_filter(
     plugin_name: &str,
     instance_name: &str,
     context: &mut CommandContext,
-) -> Result<(), Box<dyn Error>> {
+) -> GenericResult {
     let effect = {
         let plugin = context.get_plugin(plugin_name)?;
         let descriptor = plugin.descriptor.lock();
@@ -1476,7 +1478,7 @@ fn render_filter(
     frame_range: (FrameNumber, FrameNumber),
     thread_count: u32,
     context: &mut CommandContext,
-) -> Result<(), Box<dyn Error>> {
+) -> GenericResult {
     let (FrameNumber(frame_min), FrameNumber(frame_limit)) = frame_range;
     if frame_limit <= frame_min {
         return Err(format!("Invalid frame range {frame_min}..{frame_limit}").into());
@@ -1509,7 +1511,7 @@ fn render_filter(
         frame_limit,
     );
 
-    let render_range = move |start, limit| -> Result<(), Box<dyn Error>> {
+    let render_range = move |start, limit| -> GenericResult {
         for frame in start..limit {
             let render_inargs = PropertySet::new(
                 "render_inargs",
@@ -1541,7 +1543,7 @@ fn render_filter(
         let chunk_size =
             ((frame_limit - frame_min) as f32 / thread_count as f32).ceil() as u32;
 
-        thread::scope(|s| -> Result<(), Box<dyn Error>> {
+        thread::scope(|s| -> GenericResult {
             let threads = (0..thread_count)
                 .map(|i| {
                     let min = i * chunk_size;
@@ -1732,7 +1734,7 @@ fn set_params(
     values: &[(String, ParamValue)],
     call_instance_changed: bool,
     context: &mut CommandContext,
-) -> Result<(), Box<dyn Error>> {
+) -> GenericResult {
     let instance = context.get_instance(instance_name)?;
     let plugin = context.get_plugin(&instance.plugin_name)?;
 
@@ -1814,7 +1816,7 @@ fn describe_filter(
     bundle_name: &str,
     plugin_name: &str,
     context: &mut CommandContext,
-) -> Result<(), Box<dyn Error>> {
+) -> GenericResult {
     describe(bundle_name, plugin_name, context)?;
 
     let plugin = context.get_plugin(plugin_name)?;
@@ -1854,10 +1856,7 @@ fn describe_filter(
     Ok(())
 }
 
-fn process_command(
-    command: &Command,
-    context: &mut CommandContext,
-) -> Result<(), Box<dyn Error>> {
+fn process_command(command: &Command, context: &mut CommandContext) -> GenericResult {
     use commands::Command::*;
 
     match command {
