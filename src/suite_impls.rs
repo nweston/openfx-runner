@@ -4,6 +4,7 @@ use crate::suites::*;
 use crate::types::*;
 use crate::{FromProperty, Handle, OfxError, ParamValue, PropertySet, PropertyValue};
 use libc::{free, posix_memalign};
+use std::collections::HashMap;
 use std::ffi::{c_char, c_double, c_int, c_uint, c_void, CStr};
 
 // ========= ImageEffectSuite =========
@@ -800,15 +801,19 @@ extern "C" fn message(
     messageId: *const c_char,
     format: *const c_char,
 ) -> OfxStatus {
+    let id_str = if messageId.is_null() {
+        OfxStr::from_str("(null)\0")
+    } else {
+        OfxStr::from_ptr(messageId)
+    };
     println!(
-        "\n{}: {}. {}\n",
-        OfxStr::from_ptr(messageType),
-        if messageId.is_null() {
-            OfxStr::from_str("(null)\0")
-        } else {
-            OfxStr::from_ptr(messageId)
-        },
-        OfxStr::from_ptr(format)
+        "{}",
+        serde_json::to_string(&HashMap::from([
+            ("message_type", OfxStr::from_ptr(messageType).as_str(),),
+            ("message_id", id_str.as_str()),
+            ("format", OfxStr::from_ptr(format).as_str())
+        ]))
+        .unwrap()
     );
 
     // TODO: we're assuming handle is a valid effect instance
