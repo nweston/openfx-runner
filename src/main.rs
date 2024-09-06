@@ -140,13 +140,10 @@ trait Handle: Sized + Eq + std::hash::Hash + std::fmt::Debug + 'static {
             .get(self)
         {
             Object(weak.upgrade().unwrap_or_else(|| {
-                panic!(
-                    "OfxPropertySetHandle {:?} points to deallocated object",
-                    self
-                )
+                panic!("Handle {:?} points to deallocated object", self)
             }))
         } else {
-            panic!("Bad OfxPropertySetHandle {:?}", self);
+            panic!("Bad handle {:?}", self);
         }
     }
 
