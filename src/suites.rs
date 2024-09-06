@@ -236,7 +236,6 @@ pub struct OfxParameterSuiteV1 {
 
 #[repr(C)]
 pub struct OfxMessageSuiteV1 {
-    // XXX: uses varargs
     pub message: extern "C" fn(
         handle: *mut c_void,
         messageType: *const c_char,

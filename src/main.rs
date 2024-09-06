@@ -590,6 +590,8 @@ pub struct ImageEffect {
     properties: Object<PropertySet>,
     param_set: Object<ParamSet>,
     clips: HashMap<String, Object<Clip>>,
+    // Stored in reverse order (next response at end of list)
+    message_suite_responses: Vec<OfxStatus>,
 }
 
 impl Serialize for ImageEffect {
@@ -653,6 +655,7 @@ impl Default for ImageEffect {
             properties: PropertySet::new("ImageEffect", []).into_object(),
             param_set: Default::default(),
             clips: Default::default(),
+            message_suite_responses: vec![OfxStatus::ReplyYes, OfxStatus::ReplyNo], // Default::default(),
         }
     }
 }
@@ -1208,6 +1211,7 @@ fn create_instance(descriptor: &ImageEffect, context: &str) -> ImageEffect {
         properties,
         param_set,
         clips,
+        ..Default::default()
     }
 }
 
@@ -1855,6 +1859,26 @@ fn describe_filter(
     Ok(())
 }
 
+fn configure_message_suite_responses(
+    instance_name: &str,
+    responses: &[MessageSuiteResponses],
+    context: &mut CommandContext,
+) -> GenericResult {
+    let instance = context.get_instance(instance_name)?;
+    use MessageSuiteResponses::*;
+    instance.effect.lock().message_suite_responses = responses
+        .iter()
+        .rev()
+        .map(|r| match r {
+            OK => OfxStatus::OK,
+            Yes => OfxStatus::ReplyYes,
+            No => OfxStatus::ReplyNo,
+            Failed => OfxStatus::Failed,
+        })
+        .collect::<Vec<_>>();
+    Ok(())
+}
+
 fn process_command(command: &Command, context: &mut CommandContext) -> GenericResult {
     use commands::Command::*;
 
@@ -1949,6 +1973,13 @@ fn process_command(command: &Command, context: &mut CommandContext) -> GenericRe
         } => {
             let rod = get_rod(instance_name, *project_extent, input_rod, context)?;
             println!("{}", serde_json::to_string(&rod)?);
+            Ok(())
+        }
+        ConfigureMessageSuiteResponses {
+            instance_name,
+            responses,
+        } => {
+            configure_message_suite_responses(instance_name, responses, context)?;
             Ok(())
         }
     }

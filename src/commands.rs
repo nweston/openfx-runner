@@ -3,6 +3,14 @@ use crate::{FrameNumber, ParamValue};
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize)]
+pub enum MessageSuiteResponses {
+    OK,
+    Yes,
+    No,
+    Failed,
+}
+
+#[derive(Deserialize, Serialize)]
 pub struct RenderLayout {
     pub project_dims: (f64, f64),
     pub input_origin: (i32, i32),
@@ -73,5 +81,10 @@ pub enum Command {
         instance_name: String,
         input_rod: OfxRectD,
         project_extent: (f64, f64),
+    },
+    /// Configure responses for subsequent message suite calls
+    ConfigureMessageSuiteResponses {
+        instance_name: String,
+        responses: Vec<MessageSuiteResponses>,
     },
 }

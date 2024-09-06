@@ -795,7 +795,7 @@ pub const PARAMETER_SUITE: OfxParameterSuiteV1 = OfxParameterSuiteV1 {
 
 // ========= MessageSuiteV1 =========
 extern "C" fn message(
-    _handle: *mut c_void,
+    handle: *mut c_void,
     messageType: *const c_char,
     messageId: *const c_char,
     format: *const c_char,
@@ -810,7 +810,18 @@ extern "C" fn message(
         },
         OfxStr::from_ptr(format)
     );
-    OfxStatus::OK
+
+    // TODO: we're assuming handle is a valid effect instance
+    // handle. The spec also allows it to be an effect descriptor
+    // handle, or null.
+    OfxImageEffectHandle::from(handle).with_object(|effect| {
+        // Consume a configured response from the effect instance, or
+        // if there are no responses return OK
+        effect
+            .message_suite_responses
+            .pop()
+            .unwrap_or(OfxStatus::OK)
+    })
 }
 
 pub const MESSAGE_SUITE: OfxMessageSuiteV1 = OfxMessageSuiteV1 { message };
