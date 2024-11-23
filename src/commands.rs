@@ -14,7 +14,10 @@ pub enum MessageSuiteResponses {
 pub struct RenderLayout {
     pub project_dims: (f64, f64),
     pub input_origin: (i32, i32),
-    pub render_window: OfxRectI,
+    // Optionally specify the render window. If missing, use RoD
+    pub render_window: Option<OfxRectI>,
+    #[serde(default)]
+    pub crop_inputs_to_roi: bool,
 }
 
 fn default_frame_range() -> (FrameNumber, FrameNumber) {

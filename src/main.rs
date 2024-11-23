@@ -1,6 +1,7 @@
 use once_cell::sync::Lazy;
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize, Serializer};
+use std::cmp::{max, min};
 use std::collections::HashMap;
 use std::env;
 use std::error::Error;
@@ -284,13 +285,56 @@ impl Rect for OfxRectI {
     }
 }
 
+impl From<OfxRectI> for OfxRectD {
+    fn from(r: OfxRectI) -> Self {
+        Self {
+            x1: r.x1 as _,
+            y1: r.y1 as _,
+            x2: r.x2 as _,
+            y2: r.y2 as _,
+        }
+    }
+}
+
+impl From<OfxRectD> for OfxRectI {
+    fn from(r: OfxRectD) -> Self {
+        Self {
+            x1: r.x1 as _,
+            y1: r.y1 as _,
+            x2: r.x2 as _,
+            y2: r.y2 as _,
+        }
+    }
+}
+
 impl OfxRectI {
+    #[allow(dead_code)]
     fn from_dims(width: usize, height: usize) -> Self {
         Self {
             x1: 0,
             y1: 0,
             x2: width as _,
             y2: height as _,
+        }
+    }
+
+    fn crop(self, r: OfxRectI) -> Self {
+        Self {
+            x1: max(self.x1, r.x1),
+            y1: max(self.y1, r.y1),
+            x2: min(self.x2, r.x2),
+            y2: min(self.y2, r.y2),
+        }
+    }
+}
+
+impl OfxRectD {
+    fn from_dims(width: f64, height: f64) -> Self {
+        Self {
+            x1: 0.0,
+            y1: 0.0,
+            x2: width,
+            y2: height,
         }
     }
 }
@@ -455,8 +499,7 @@ impl Pixel {
 
 #[derive(Clone, Debug)]
 pub struct Image {
-    width: usize,
-    height: usize,
+    bounds: OfxRectI,
     pixels: Vec<Pixel>,
     properties: Object<PropertySet>,
 }
@@ -490,8 +533,7 @@ impl Image {
         )
         .into_object();
         Self {
-            width: bounds.width(),
-            height: bounds.height(),
+            bounds: *bounds,
             pixels,
             properties,
         }
@@ -501,6 +543,32 @@ impl Image {
         let mut pixels = Vec::new();
         pixels.resize(bounds.width() * bounds.height(), Pixel::zero());
         Self::new(name, bounds, pixels)
+    }
+
+    // Adjust bounds and data pointer so image appears cropped to
+    // given bounds, without changing the underlying pixel data.
+    fn crop(&self, bounds: &OfxRectI) {
+        // Clamp bounds to actual image dimensions
+        let bounds = OfxRectI {
+            x1: max(bounds.x1, self.bounds.x1),
+            x2: min(bounds.x2, self.bounds.x2),
+            y1: max(bounds.y1, self.bounds.y1),
+            y2: min(bounds.y2, self.bounds.y2),
+        };
+
+        let offset = self.bounds.width() as isize * (bounds.y1 - self.bounds.y1) as isize
+            + (bounds.x1 - self.bounds.x1) as isize;
+        let data = unsafe {
+            PropertyValue::Pointer(Addr(
+                self.pixels.as_ptr().offset(offset) as *const c_void
+            ))
+        };
+
+        let mut props = self.properties.lock();
+        props
+            .values
+            .insert(OfxImagePropBounds.to_string(), (&bounds).into());
+        props.set(OfxImagePropData.as_str(), 0, data)
     }
 }
 
@@ -541,8 +609,8 @@ impl Clip {
         self.region_of_definition = Some(OfxRectD {
             x1: 0.0,
             y1: 0.0,
-            x2: image.width as f64,
-            y2: image.height as f64,
+            x2: image.bounds.width() as f64,
+            y2: image.bounds.height() as f64,
         });
         self.images = ClipImages::Static(image);
     }
@@ -859,6 +927,16 @@ impl From<PropertyValue> for f64 {
             val
         } else {
             panic!("Expected Double value, got {:?}", p);
+        }
+    }
+}
+
+impl From<PropertyValue> for *const c_void {
+    fn from(p: PropertyValue) -> Self {
+        if let PropertyValue::Pointer(Addr(val)) = p {
+            val
+        } else {
+            panic!("Expected Pointer value, got {:?}", p);
         }
     }
 }
@@ -1289,11 +1367,17 @@ fn read_exr(name: &str, path: &str, origin: (i32, i32)) -> Result<Image, Box<dyn
 }
 
 fn write_exr(filename: &str, image: Image) -> GenericResult {
-    write_rgba_file(filename, image.width, image.height, |x, y| {
-        // Flip y and convert to flat index
-        let pixel = &image.pixels[(image.height - 1 - y) * image.width + x];
-        (pixel.r, pixel.g, pixel.b, pixel.a)
-    })?;
+    write_rgba_file(
+        filename,
+        image.bounds.width(),
+        image.bounds.height(),
+        |x, y| {
+            // Flip y and convert to flat index
+            let pixel =
+                &image.pixels[(image.bounds.height() - 1 - y) * image.bounds.width() + x];
+            (pixel.r, pixel.g, pixel.b, pixel.a)
+        },
+    )?;
 
     Ok(())
 }
@@ -1471,6 +1555,32 @@ fn create_filter(
     Ok(())
 }
 
+fn get_output_rect(
+    input: &Image,
+    layout: Option<&RenderLayout>,
+    project_rect: OfxRectD,
+    instance: &Instance,
+    plugin: &LoadedPlugin,
+) -> Result<OfxRectI, Box<dyn Error>> {
+    Ok(if let Some(l) = layout {
+        if let Some(w) = l.render_window {
+            w
+        } else {
+            // If layout is given but doesn't specify the render
+            // window, compute it with the plugin's RoD action
+            OfxRectI::from(get_rod_for_instance(
+                (project_rect.x2, project_rect.y2),
+                &input.bounds.into(),
+                instance,
+                plugin,
+            )?)
+            .crop(project_rect.into())
+        }
+    } else {
+        project_rect.into()
+    })
+}
+
 fn render_filter(
     instance_name: &str,
     input_file: &str,
@@ -1491,17 +1601,27 @@ fn render_filter(
     let plugin = context.get_plugin(&instance.plugin_name)?;
 
     let input = read_exr("input", input_file, input_origin)?;
-    let width = input.width;
-    let height = input.height;
+    let width = input.bounds.width();
+    let height = input.bounds.height();
 
     // If no layout is given, default project dims and output to match
     // the input image
     let project_dims = layout
         .map(|l| [l.project_dims.0, l.project_dims.1])
         .unwrap_or([(width as f64), (height as f64)]);
-    let output_rect = layout
-        .map(|l| l.render_window)
-        .unwrap_or(OfxRectI::from_dims(width, height));
+    let project_rect = OfxRectD::from_dims(project_dims[0], project_dims[1]);
+
+    let output_rect = get_output_rect(&input, layout, project_rect, instance, plugin)?;
+
+    if layout.map(|l| l.crop_inputs_to_roi).unwrap_or(false) {
+        let roi = get_rois_for_instance(
+            (project_dims[0], project_dims[1]),
+            &output_rect.into(),
+            instance,
+            plugin,
+        )?;
+        input.crop(&roi.into());
+    }
 
     create_images(
         &mut instance.effect.lock(),
@@ -1597,6 +1717,15 @@ fn get_rois(
     let instance = context.get_instance(instance_name)?;
     let plugin = context.get_plugin(&instance.plugin_name)?;
 
+    get_rois_for_instance(project_extent, region_of_interest, instance, plugin)
+}
+
+fn get_rois_for_instance(
+    project_extent: (f64, f64),
+    region_of_interest: &OfxRectD,
+    instance: &Instance,
+    plugin: &LoadedPlugin,
+) -> Result<OfxRectD, Box<dyn Error>> {
     let (width, height) = project_extent;
 
     // Set effect properties
@@ -1682,6 +1811,15 @@ fn get_rod(
     let instance = context.get_instance(instance_name)?;
     let plugin = context.get_plugin(&instance.plugin_name)?;
 
+    get_rod_for_instance(project_extent, input_rod, instance, plugin)
+}
+
+fn get_rod_for_instance(
+    project_extent: (f64, f64),
+    input_rod: &OfxRectD,
+    instance: &Instance,
+    plugin: &LoadedPlugin,
+) -> Result<OfxRectD, Box<dyn Error>> {
     let (width, height) = project_extent;
 
     // Set effect properties
