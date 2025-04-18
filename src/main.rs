@@ -1,4 +1,10 @@
+use clap::{Parser, Subcommand};
+use exr::prelude::{read_first_rgba_layer_from_file, write_rgba_file};
 use once_cell::sync::Lazy;
+use openfx_rs::constants;
+use openfx_rs::constants::ofxstatus;
+use openfx_rs::strings::OfxStr;
+use openfx_sys;
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize, Serializer};
 use std::cmp::{max, min};
@@ -10,25 +16,13 @@ use std::fs;
 use std::string::String;
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 use std::thread;
+use types::*;
 
 mod commands;
 use commands::*;
-pub mod constants;
-use constants::actions::*;
-use constants::host::*;
-use constants::image_effect::*;
-use constants::misc::*;
-use constants::param::*;
-use constants::properties::*;
-use constants::suites::*;
 mod suite_impls;
 mod suites;
 mod types;
-use clap::{Parser, Subcommand};
-use exr::prelude::{read_first_rgba_layer_from_file, write_rgba_file};
-use types::*;
-mod strings;
-use strings::OfxStr;
 
 /// An integer frame time
 #[derive(Deserialize, Serialize, Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -235,7 +229,7 @@ impl OfxError {
     fn ok() -> Self {
         Self {
             message: "".to_string(),
-            status: OfxStatus::OK,
+            status: ofxstatus::OK,
         }
     }
 
@@ -285,57 +279,39 @@ impl Rect for OfxRectI {
     }
 }
 
-impl From<OfxRectI> for OfxRectD {
-    fn from(r: OfxRectI) -> Self {
-        Self {
-            x1: r.x1 as _,
-            y1: r.y1 as _,
-            x2: r.x2 as _,
-            y2: r.y2 as _,
-        }
+fn rect_from_dims(width: f64, height: f64) -> OfxRectD {
+    OfxRectD {
+        x1: 0.0,
+        y1: 0.0,
+        x2: width as _,
+        y2: height as _,
     }
 }
 
-impl From<OfxRectD> for OfxRectI {
-    fn from(r: OfxRectD) -> Self {
-        Self {
-            x1: r.x1 as _,
-            y1: r.y1 as _,
-            x2: r.x2 as _,
-            y2: r.y2 as _,
-        }
+fn rect_to_double(r: OfxRectI) -> OfxRectD {
+    OfxRectD {
+        x1: r.x1 as _,
+        y1: r.y1 as _,
+        x2: r.x2 as _,
+        y2: r.y2 as _,
     }
 }
 
-impl OfxRectI {
-    #[allow(dead_code)]
-    fn from_dims(width: usize, height: usize) -> Self {
-        Self {
-            x1: 0,
-            y1: 0,
-            x2: width as _,
-            y2: height as _,
-        }
-    }
-
-    fn crop(self, r: OfxRectI) -> Self {
-        Self {
-            x1: max(self.x1, r.x1),
-            y1: max(self.y1, r.y1),
-            x2: min(self.x2, r.x2),
-            y2: min(self.y2, r.y2),
-        }
+fn rect_to_int(r: OfxRectD) -> OfxRectI {
+    OfxRectI {
+        x1: r.x1 as _,
+        y1: r.y1 as _,
+        x2: r.x2 as _,
+        y2: r.y2 as _,
     }
 }
 
-impl OfxRectD {
-    fn from_dims(width: f64, height: f64) -> Self {
-        Self {
-            x1: 0.0,
-            y1: 0.0,
-            x2: width,
-            y2: height,
-        }
+fn crop(a: OfxRectI, b: OfxRectI) -> OfxRectI {
+    OfxRectI {
+        x1: max(a.x1, b.x1),
+        y1: max(a.y1, b.y1),
+        x2: min(a.x2, b.x2),
+        y2: min(a.y2, b.y2),
     }
 }
 
@@ -366,63 +342,105 @@ impl ParamValue {
     fn from_descriptor(props: &PropertySet) -> Self {
         #[allow(non_upper_case_globals)]
         match OfxStr::from_cstring(
-            &props.get_type::<CString>(OfxParamPropType, 0).unwrap(),
+            &props
+                .get_type::<CString>(constants::ParamPropType, 0)
+                .unwrap(),
         ) {
-            OfxParamTypeBoolean => Self::Boolean(
+            constants::ParamTypeBoolean => Self::Boolean(
                 props
-                    .get_type::<bool>(OfxParamPropDefault, 0)
+                    .get_type::<bool>(constants::ParamPropDefault, 0)
                     .unwrap_or(false),
             ),
-            OfxParamTypeChoice => Self::Choice(
-                props.get_type::<i32>(OfxParamPropDefault, 0).unwrap_or(0) as usize,
-            ),
-            OfxParamTypeCustom => Self::Custom(
+            constants::ParamTypeChoice => Self::Choice(
                 props
-                    .get_type::<CString>(OfxParamPropDefault, 0)
+                    .get_type::<i32>(constants::ParamPropDefault, 0)
+                    .unwrap_or(0) as usize,
+            ),
+            constants::ParamTypeCustom => Self::Custom(
+                props
+                    .get_type::<CString>(constants::ParamPropDefault, 0)
                     .unwrap_or_else(|| CString::new("".to_string()).unwrap()),
             ),
-            OfxParamTypeDouble => {
-                Self::Double(props.get_type::<f64>(OfxParamPropDefault, 0).unwrap_or(0.0))
-            }
-            OfxParamTypeDouble2D => Self::Double2D(
-                props.get_type::<f64>(OfxParamPropDefault, 0).unwrap_or(0.0),
-                props.get_type::<f64>(OfxParamPropDefault, 1).unwrap_or(0.0),
-            ),
-            OfxParamTypeDouble3D => Self::Double3D(
-                props.get_type::<f64>(OfxParamPropDefault, 0).unwrap_or(0.0),
-                props.get_type::<f64>(OfxParamPropDefault, 1).unwrap_or(0.0),
-                props.get_type::<f64>(OfxParamPropDefault, 2).unwrap_or(0.0),
-            ),
-            OfxParamTypeGroup => Self::Group,
-            OfxParamTypeInteger => {
-                Self::Integer(props.get_type::<i32>(OfxParamPropDefault, 0).unwrap_or(0))
-            }
-            OfxParamTypeInteger2D => Self::Integer2D(
-                props.get_type::<i32>(OfxParamPropDefault, 0).unwrap_or(0),
-                props.get_type::<i32>(OfxParamPropDefault, 1).unwrap_or(0),
-            ),
-            OfxParamTypeInteger3D => Self::Integer3D(
-                props.get_type::<i32>(OfxParamPropDefault, 0).unwrap_or(0),
-                props.get_type::<i32>(OfxParamPropDefault, 1).unwrap_or(0),
-                props.get_type::<i32>(OfxParamPropDefault, 2).unwrap_or(0),
-            ),
-            OfxParamTypePage => Self::Page,
-            OfxParamTypeParametric => Self::Parametric,
-            OfxParamTypePushButton => Self::PushButton,
-            OfxParamTypeRGB => Self::Rgb(
-                props.get_type::<f64>(OfxParamPropDefault, 0).unwrap_or(0.0),
-                props.get_type::<f64>(OfxParamPropDefault, 1).unwrap_or(0.0),
-                props.get_type::<f64>(OfxParamPropDefault, 2).unwrap_or(0.0),
-            ),
-            OfxParamTypeRGBA => Self::Rgba(
-                props.get_type::<f64>(OfxParamPropDefault, 0).unwrap_or(0.0),
-                props.get_type::<f64>(OfxParamPropDefault, 1).unwrap_or(0.0),
-                props.get_type::<f64>(OfxParamPropDefault, 2).unwrap_or(0.0),
-                props.get_type::<f64>(OfxParamPropDefault, 3).unwrap_or(0.0),
-            ),
-            OfxParamTypeString => Self::String(
+            constants::ParamTypeDouble => Self::Double(
                 props
-                    .get_type::<CString>(OfxParamPropDefault, 0)
+                    .get_type::<f64>(constants::ParamPropDefault, 0)
+                    .unwrap_or(0.0),
+            ),
+            constants::ParamTypeDouble2D => Self::Double2D(
+                props
+                    .get_type::<f64>(constants::ParamPropDefault, 0)
+                    .unwrap_or(0.0),
+                props
+                    .get_type::<f64>(constants::ParamPropDefault, 1)
+                    .unwrap_or(0.0),
+            ),
+            constants::ParamTypeDouble3D => Self::Double3D(
+                props
+                    .get_type::<f64>(constants::ParamPropDefault, 0)
+                    .unwrap_or(0.0),
+                props
+                    .get_type::<f64>(constants::ParamPropDefault, 1)
+                    .unwrap_or(0.0),
+                props
+                    .get_type::<f64>(constants::ParamPropDefault, 2)
+                    .unwrap_or(0.0),
+            ),
+            constants::ParamTypeGroup => Self::Group,
+            constants::ParamTypeInteger => Self::Integer(
+                props
+                    .get_type::<i32>(constants::ParamPropDefault, 0)
+                    .unwrap_or(0),
+            ),
+            constants::ParamTypeInteger2D => Self::Integer2D(
+                props
+                    .get_type::<i32>(constants::ParamPropDefault, 0)
+                    .unwrap_or(0),
+                props
+                    .get_type::<i32>(constants::ParamPropDefault, 1)
+                    .unwrap_or(0),
+            ),
+            constants::ParamTypeInteger3D => Self::Integer3D(
+                props
+                    .get_type::<i32>(constants::ParamPropDefault, 0)
+                    .unwrap_or(0),
+                props
+                    .get_type::<i32>(constants::ParamPropDefault, 1)
+                    .unwrap_or(0),
+                props
+                    .get_type::<i32>(constants::ParamPropDefault, 2)
+                    .unwrap_or(0),
+            ),
+            constants::ParamTypePage => Self::Page,
+            constants::ParamTypeParametric => Self::Parametric,
+            constants::ParamTypePushButton => Self::PushButton,
+            constants::ParamTypeRGB => Self::Rgb(
+                props
+                    .get_type::<f64>(constants::ParamPropDefault, 0)
+                    .unwrap_or(0.0),
+                props
+                    .get_type::<f64>(constants::ParamPropDefault, 1)
+                    .unwrap_or(0.0),
+                props
+                    .get_type::<f64>(constants::ParamPropDefault, 2)
+                    .unwrap_or(0.0),
+            ),
+            constants::ParamTypeRGBA => Self::Rgba(
+                props
+                    .get_type::<f64>(constants::ParamPropDefault, 0)
+                    .unwrap_or(0.0),
+                props
+                    .get_type::<f64>(constants::ParamPropDefault, 1)
+                    .unwrap_or(0.0),
+                props
+                    .get_type::<f64>(constants::ParamPropDefault, 2)
+                    .unwrap_or(0.0),
+                props
+                    .get_type::<f64>(constants::ParamPropDefault, 3)
+                    .unwrap_or(0.0),
+            ),
+            constants::ParamTypeString => Self::String(
+                props
+                    .get_type::<CString>(constants::ParamPropDefault, 0)
                     .unwrap_or_else(|| CString::new("".to_string()).unwrap()),
             ),
             s => panic!("Unknown param type: {}", s),
@@ -457,7 +475,10 @@ impl ParamSet {
     fn create_param(&mut self, kind: OfxStr, name: OfxStr) -> OfxPropertySetHandle {
         let props = PropertySet::new(
             &("param_".to_string() + name.as_str()),
-            [(OfxPropName, name.into()), (OfxParamPropType, kind.into())],
+            [
+                (constants::PropName, name.into()),
+                (constants::ParamPropType, kind.into()),
+            ],
         )
         .into_object();
         self.descriptors.push(props.clone());
@@ -509,26 +530,32 @@ impl Image {
         let properties = PropertySet::new(
             &format!("{}_image", name),
             [
-                (OfxPropType, OfxTypeImage.into()),
-                (OfxImageEffectPropPixelDepth, OfxBitDepthFloat.into()),
-                (OfxImageEffectPropComponents, OfxImageComponentRGBA.into()),
+                (constants::PropType, constants::TypeImage.into()),
                 (
-                    OfxImageEffectPropPreMultiplication,
-                    OfxImagePreMultiplied.into(),
+                    constants::ImageEffectPropPixelDepth,
+                    constants::BitDepthFloat.into(),
                 ),
-                (OfxImageEffectPropRenderScale, [1.0, 1.0].into()),
-                (OfxImagePropPixelAspectRatio, (1.0).into()),
                 (
-                    OfxImagePropData,
+                    constants::ImageEffectPropComponents,
+                    constants::ImageComponentRGBA.into(),
+                ),
+                (
+                    constants::ImageEffectPropPreMultiplication,
+                    constants::ImagePreMultiplied.into(),
+                ),
+                (constants::ImageEffectPropRenderScale, [1.0, 1.0].into()),
+                (constants::ImagePropPixelAspectRatio, (1.0).into()),
+                (
+                    constants::ImagePropData,
                     (pixels.as_mut_ptr() as *mut c_void).into(),
                 ),
-                (OfxImagePropBounds, bounds.into()),
-                (OfxImagePropRegionOfDefinition, bounds.into()),
+                (constants::ImagePropBounds, bounds.into()),
+                (constants::ImagePropRegionOfDefinition, bounds.into()),
                 (
-                    OfxImagePropRowBytes,
+                    constants::ImagePropRowBytes,
                     (bounds.width() * std::mem::size_of::<Pixel>()).into(),
                 ),
-                (OfxImagePropField, OfxImageFieldNone.into()),
+                (constants::ImagePropField, constants::ImageFieldNone.into()),
             ],
         )
         .into_object();
@@ -567,8 +594,8 @@ impl Image {
         let mut props = self.properties.lock();
         props
             .values
-            .insert(OfxImagePropBounds.to_string(), (&bounds).into());
-        props.set(OfxImagePropData.as_str(), 0, data)
+            .insert(constants::ImagePropBounds.to_string(), (&bounds).into());
+        props.set(constants::ImagePropData.as_str(), 0, data)
     }
 }
 
@@ -695,12 +722,18 @@ impl ImageEffect {
                 properties: PropertySet::new(
                     &format!("clip_{}", name),
                     [
-                        (OfxImageEffectPropPixelDepth, OfxBitDepthFloat.into()),
-                        (OfxImageEffectPropComponents, OfxImageComponentRGBA.into()),
-                        (OfxImageEffectPropFrameRate, (24.0).into()),
-                        (OfxImagePropPixelAspectRatio, (1.0).into()),
-                        (OfxImageEffectPropFrameRange, [0.0, 1.0].into()),
-                        (OfxImageClipPropConnected, 1.into()),
+                        (
+                            constants::ImageEffectPropPixelDepth,
+                            constants::BitDepthFloat.into(),
+                        ),
+                        (
+                            constants::ImageEffectPropComponents,
+                            constants::ImageComponentRGBA.into(),
+                        ),
+                        (constants::ImageEffectPropFrameRate, (24.0).into()),
+                        (constants::ImagePropPixelAspectRatio, (1.0).into()),
+                        (constants::ImageEffectPropFrameRange, [0.0, 1.0].into()),
+                        (constants::ImageClipPropConnected, 1.into()),
                     ],
                 )
                 .into_object(),
@@ -723,7 +756,7 @@ impl Default for ImageEffect {
             properties: PropertySet::new("ImageEffect", []).into_object(),
             param_set: Default::default(),
             clips: Default::default(),
-            message_suite_responses: vec![OfxStatus::ReplyYes, OfxStatus::ReplyNo], // Default::default(),
+            message_suite_responses: vec![ofxstatus::ReplyYes, ofxstatus::ReplyNo], // Default::default(),
         }
     }
 }
@@ -744,7 +777,7 @@ struct Plugin {
         *const c_void,
         OfxPropertySetHandle,
         OfxPropertySetHandle,
-    ) -> OfxStatus,
+    ) -> openfx_sys::OfxStatus,
 }
 
 impl Plugin {
@@ -1055,7 +1088,7 @@ impl PropertySet {
             .get(key.as_str())
             .ok_or_else(|| OfxError {
                 message: format!("Property {} not found on {}", key, self.name),
-                status: OfxStatus::ErrUnknown,
+                status: ofxstatus::ErrUnknown,
             })
             .map(|values| values.0.as_slice())
     }
@@ -1064,7 +1097,7 @@ impl PropertySet {
         self.get_all(key).and_then(|values| {
             values.get(index).ok_or(OfxError {
                 message: format!("Property {} bad index {} on {}", key, index, self.name),
-                status: OfxStatus::ErrBadIndex,
+                status: ofxstatus::ErrBadIndex,
             })
         })
     }
@@ -1090,7 +1123,7 @@ impl PropertySet {
                     values.len(),
                     self.name
                 ),
-                status: OfxStatus::ErrBadIndex,
+                status: ofxstatus::ErrBadIndex,
             })
         } else {
             Ok(OfxRectD {
@@ -1168,27 +1201,27 @@ extern "C" fn fetch_suite(
     let suite = OfxStr::from_ptr(name);
     #[allow(non_upper_case_globals)]
     match suite {
-        OfxImageEffectSuite => {
+        constants::ImageEffectSuite => {
             assert!(version == 1);
             &suite_impls::IMAGE_EFFECT_SUITE as *const _ as *const c_void
         }
-        OfxPropertySuite => {
+        constants::PropertySuite => {
             assert!(version == 1);
             &suite_impls::PROPERTY_SUITE as *const _ as *const c_void
         }
-        OfxParameterSuite => {
+        constants::ParameterSuite => {
             assert!(version == 1);
             &suite_impls::PARAMETER_SUITE as *const _ as *const c_void
         }
-        OfxMemorySuite => {
+        constants::MemorySuite => {
             assert!(version == 1);
             &suite_impls::MEMORY_SUITE as *const _ as *const c_void
         }
-        OfxMultiThreadSuite => {
+        constants::MultiThreadSuite => {
             assert!(version == 1);
             &suite_impls::MULTI_THREAD_SUITE as *const _ as *const c_void
         }
-        OfxMessageSuite => {
+        constants::MessageSuite => {
             assert!(version == 1);
             &suite_impls::MESSAGE_SUITE as *const _ as *const c_void
         }
@@ -1211,10 +1244,11 @@ fn get_plugins(lib: &libloading::Library) -> Result<Vec<Plugin>, Box<dyn Error>>
         for i in 0..count {
             let p = &*get_plugin(i);
             let api = OfxStr::from_ptr(p.pluginApi);
-            if api != OfxImageEffectPluginApi {
+            if api != constants::ImageEffectPluginApi {
                 return Err(format!(
                     "Unknown API '{}' (only '{}' is supported)",
-                    api, OfxImageEffectPluginApi
+                    api,
+                    constants::ImageEffectPluginApi
                 )
                 .into());
             }
@@ -1248,7 +1282,7 @@ fn create_params(descriptors: &[Object<PropertySet>]) -> HashMap<String, Object<
         .map(|d| {
             let props = d.lock();
             (
-                props.get_type::<String>(OfxPropName, 0).unwrap(),
+                props.get_type::<String>(constants::PropName, 0).unwrap(),
                 Param::from_descriptor(&props).into_object(),
             )
         })
@@ -1261,20 +1295,23 @@ fn create_instance(descriptor: &ImageEffect, context: &str) -> ImageEffect {
     let properties = PropertySet::new(
         "instance",
         [
-            (OfxImageEffectPropContext, context.into()),
+            (constants::ImageEffectPropContext, context.into()),
             (
-                OfxPluginPropFilePath,
+                constants::PluginPropFilePath,
                 descriptor
                     .properties
                     .lock()
                     .values
-                    .get(OfxPluginPropFilePath.as_str())
+                    .get(constants::PluginPropFilePath.as_str())
                     .unwrap()
                     .clone(),
             ),
-            (OfxImageEffectPropFrameRate, (24.0).into()),
-            (OfxImagePropPixelAspectRatio, (1.0).into()),
-            (OfxImageEffectInstancePropEffectDuration, (1.0).into()),
+            (constants::ImageEffectPropFrameRate, (24.0).into()),
+            (constants::ImagePropPixelAspectRatio, (1.0).into()),
+            (
+                constants::ImageEffectInstancePropEffectDuration,
+                (1.0).into(),
+            ),
         ],
     )
     .into_object();
@@ -1302,14 +1339,13 @@ fn create_images(
     frame_limit: u32,
 ) {
     effect.properties.lock().values.insert(
-        OfxImageEffectPropProjectSize.to_string(),
+        constants::ImageEffectPropProjectSize.to_string(),
         project_dims.clone(),
     );
-    effect
-        .properties
-        .lock()
-        .values
-        .insert(OfxImageEffectPropProjectExtent.to_string(), project_dims);
+    effect.properties.lock().values.insert(
+        constants::ImageEffectPropProjectExtent.to_string(),
+        project_dims,
+    );
 
     effect.clips.get("Source").unwrap().lock().set_image(input);
     let mut output = effect.clips.get("Output").unwrap().lock();
@@ -1451,7 +1487,7 @@ fn create_plugin(
         .ok_or(format!("Plugin {} not found in bundle", plugin_name))?;
     (plugin.set_host)(context.host);
     plugin.try_call_action(
-        OfxActionLoad,
+        constants::ActionLoad,
         OfxImageEffectHandle::from(std::ptr::null_mut()),
         OfxPropertySetHandle::from(std::ptr::null_mut()),
         OfxPropertySetHandle::from(std::ptr::null_mut()),
@@ -1459,7 +1495,7 @@ fn create_plugin(
 
     let descriptor = ImageEffect::new(plugin_name);
     plugin.try_call_action(
-        OfxActionDescribe,
+        constants::ActionDescribe,
         descriptor.clone().into(),
         OfxPropertySetHandle::from(std::ptr::null_mut()),
         OfxPropertySetHandle::from(std::ptr::null_mut()),
@@ -1487,15 +1523,15 @@ fn create_filter(
         let descriptor = plugin.descriptor.lock();
         let values = &descriptor.properties.lock().values;
         if !values
-            .get(OfxImageEffectPropSupportedContexts.as_str())
-            .map(|p| p.0.contains(&OfxImageEffectContextFilter.into()))
+            .get(constants::ImageEffectPropSupportedContexts.as_str())
+            .map(|p| p.0.contains(&constants::ImageEffectContextFilter.into()))
             .unwrap_or(false)
         {
             return Err("Filter context not supported".into());
         }
         if !values
-            .get(OfxImageEffectPropSupportedPixelDepths.as_str())
-            .map(|p| p.0.contains(&OfxBitDepthFloat.into()))
+            .get(constants::ImageEffectPropSupportedPixelDepths.as_str())
+            .map(|p| p.0.contains(&constants::BitDepthFloat.into()))
             .unwrap_or(false)
         {
             return Err("OfxBitDepthFloat not supported".into());
@@ -1506,7 +1542,7 @@ fn create_filter(
             properties: PropertySet::new(
                 "filter",
                 [(
-                    OfxPluginPropFilePath,
+                    constants::PluginPropFilePath,
                     plugin.bundle.path.to_str().unwrap().into(),
                 )],
             )
@@ -1518,14 +1554,14 @@ fn create_filter(
         let filter_inargs = PropertySet::new(
             "filter_inargs",
             [(
-                OfxImageEffectPropContext,
-                OfxImageEffectContextFilter.into(),
+                constants::ImageEffectPropContext,
+                constants::ImageEffectContextFilter.into(),
             )],
         )
         .into_object();
         #[allow(clippy::redundant_clone)]
         plugin.plugin.try_call_action(
-            OfxImageEffectActionDescribeInContext,
+            constants::ImageEffectActionDescribeInContext,
             filter.clone().into(),
             OfxPropertySetHandle::from(filter_inargs.clone()),
             OfxPropertySetHandle::from(std::ptr::null_mut()),
@@ -1534,11 +1570,11 @@ fn create_filter(
         // Instance of the filter. Both instances and descriptors are
         // ImageEffect objects.
         let filter_instance: Object<ImageEffect> =
-            create_instance(&filter.lock(), OfxImageEffectContextFilter.as_str())
+            create_instance(&filter.lock(), constants::ImageEffectContextFilter.as_str())
                 .into_object();
 
         plugin.plugin.try_call_action(
-            OfxActionCreateInstance,
+            constants::ActionCreateInstance,
             filter_instance.clone().into(),
             OfxPropertySetHandle::from(std::ptr::null_mut()),
             OfxPropertySetHandle::from(std::ptr::null_mut()),
@@ -1568,16 +1604,18 @@ fn get_output_rect(
         } else {
             // If layout is given but doesn't specify the render
             // window, compute it with the plugin's RoD action
-            OfxRectI::from(get_rod_for_instance(
-                (project_rect.x2, project_rect.y2),
-                &input.bounds.into(),
-                instance,
-                plugin,
-            )?)
-            .crop(project_rect.into())
+            crop(
+                rect_to_int(get_rod_for_instance(
+                    (project_rect.x2, project_rect.y2),
+                    &rect_to_double(input.bounds),
+                    instance,
+                    plugin,
+                )?),
+                rect_to_int(project_rect),
+            )
         }
     } else {
-        project_rect.into()
+        rect_to_int(project_rect)
     })
 }
 
@@ -1609,18 +1647,18 @@ fn render_filter(
     let project_dims = layout
         .map(|l| [l.project_dims.0, l.project_dims.1])
         .unwrap_or([(width as f64), (height as f64)]);
-    let project_rect = OfxRectD::from_dims(project_dims[0], project_dims[1]);
+    let project_rect = rect_from_dims(project_dims[0], project_dims[1]);
 
     let output_rect = get_output_rect(&input, layout, project_rect, instance, plugin)?;
 
     if layout.map(|l| l.crop_inputs_to_roi).unwrap_or(false) {
         let roi = get_rois_for_instance(
             (project_dims[0], project_dims[1]),
-            &output_rect.into(),
+            &rect_to_double(output_rect),
             instance,
             plugin,
         )?;
-        input.crop(&roi.into());
+        input.crop(&rect_to_int(roi));
     }
 
     create_images(
@@ -1637,20 +1675,32 @@ fn render_filter(
             let render_inargs = PropertySet::new(
                 "render_inargs",
                 [
-                    (OfxPropTime, (frame as f64).into()),
-                    (OfxImageEffectPropFieldToRender, OfxImageFieldNone.into()),
-                    (OfxImageEffectPropRenderWindow, (&output_rect).into()),
-                    (OfxImageEffectPropRenderScale, [1.0, 1.0].into()),
-                    (OfxImageEffectPropSequentialRenderStatus, false.into()),
-                    (OfxImageEffectPropInteractiveRenderStatus, false.into()),
-                    (OfxImageEffectPropRenderQualityDraft, false.into()),
+                    (constants::PropTime, (frame as f64).into()),
+                    (
+                        constants::ImageEffectPropFieldToRender,
+                        constants::ImageFieldNone.into(),
+                    ),
+                    (
+                        constants::ImageEffectPropRenderWindow,
+                        (&output_rect).into(),
+                    ),
+                    (constants::ImageEffectPropRenderScale, [1.0, 1.0].into()),
+                    (
+                        constants::ImageEffectPropSequentialRenderStatus,
+                        false.into(),
+                    ),
+                    (
+                        constants::ImageEffectPropInteractiveRenderStatus,
+                        false.into(),
+                    ),
+                    (constants::ImageEffectPropRenderQualityDraft, false.into()),
                 ],
             )
             .into_object();
 
             #[allow(clippy::redundant_clone)]
             plugin.plugin.try_call_action(
-                OfxImageEffectActionRender,
+                constants::ImageEffectActionRender,
                 instance.effect.clone().into(),
                 OfxPropertySetHandle::from(render_inargs.clone()),
                 OfxPropertySetHandle::from(std::ptr::null_mut()),
@@ -1751,17 +1801,20 @@ fn get_rois_for_instance(
     let inargs = PropertySet::new(
         "getRoI_inargs",
         [
-            (OfxPropTime, (0.0).into()),
-            (OfxImageEffectPropRenderScale, [1.0, 1.0].into()),
+            (constants::PropTime, (0.0).into()),
+            (constants::ImageEffectPropRenderScale, [1.0, 1.0].into()),
             (
-                OfxImageEffectPropRegionOfInterest,
+                constants::ImageEffectPropRegionOfInterest,
                 region_of_interest.into(),
             ),
             // Not mentioned in the spec, but plugins appear to look
             // for them in practice
-            (OfxImageEffectPropFieldToRender, OfxImageFieldNone.into()),
             (
-                OfxImageEffectPropRenderWindow,
+                constants::ImageEffectPropFieldToRender,
+                constants::ImageFieldNone.into(),
+            ),
+            (
+                constants::ImageEffectPropRenderWindow,
                 [0, 0, width as c_int, height as c_int].into(),
             ),
         ],
@@ -1774,7 +1827,7 @@ fn get_rois_for_instance(
 
     #[allow(clippy::redundant_clone)]
     plugin.plugin.try_call_action(
-        OfxImageEffectActionGetRegionsOfInterest,
+        constants::ImageEffectActionGetRegionsOfInterest,
         instance.effect.clone().into(),
         OfxPropertySetHandle::from(inargs.clone()),
         OfxPropertySetHandle::from(outargs.clone()),
@@ -1788,15 +1841,15 @@ fn set_project_props(instance: &Instance, width: f64, height: f64) {
     let effect = &mut instance.effect.lock();
     let mut props = effect.properties.lock();
     props.values.insert(
-        OfxImageEffectPropProjectSize.to_string(),
+        constants::ImageEffectPropProjectSize.to_string(),
         [width, height].into(),
     );
     props.values.insert(
-        OfxImageEffectPropProjectOffset.to_string(),
+        constants::ImageEffectPropProjectOffset.to_string(),
         [0.0, 0.0].into(),
     );
     props.values.insert(
-        OfxImageEffectPropProjectExtent.to_string(),
+        constants::ImageEffectPropProjectExtent.to_string(),
         [width, height].into(),
     );
 }
@@ -1838,13 +1891,16 @@ fn get_rod_for_instance(
     let inargs = PropertySet::new(
         "getRoD_inargs",
         [
-            (OfxPropTime, (0.0).into()),
-            (OfxImageEffectPropRenderScale, [1.0, 1.0].into()),
+            (constants::PropTime, (0.0).into()),
+            (constants::ImageEffectPropRenderScale, [1.0, 1.0].into()),
             // Not mentioned in the spec, but plugins appear to look
             // for them in practice
-            (OfxImageEffectPropFieldToRender, OfxImageFieldNone.into()),
             (
-                OfxImageEffectPropRenderWindow,
+                constants::ImageEffectPropFieldToRender,
+                constants::ImageFieldNone.into(),
+            ),
+            (
+                constants::ImageEffectPropRenderWindow,
                 [0, 0, width as c_int, height as c_int].into(),
             ),
         ],
@@ -1853,13 +1909,16 @@ fn get_rod_for_instance(
 
     let outargs = PropertySet::new(
         "getRoD_outargs",
-        [(OfxImageEffectPropRegionOfDefinition, input_rod.into())],
+        [(
+            constants::ImageEffectPropRegionOfDefinition,
+            input_rod.into(),
+        )],
     )
     .into_object();
 
     #[allow(clippy::redundant_clone)]
     plugin.plugin.try_call_action(
-        OfxImageEffectActionGetRegionOfDefinition,
+        constants::ImageEffectActionGetRegionOfDefinition,
         instance.effect.clone().into(),
         OfxPropertySetHandle::from(inargs.clone()),
         OfxPropertySetHandle::from(outargs.clone()),
@@ -1867,7 +1926,7 @@ fn get_rod_for_instance(
 
     let out = outargs.lock();
     // Ok(out.get_rectd(roi_prop)?)
-    Ok(out.get_rectd(OfxImageEffectPropRegionOfDefinition)?)
+    Ok(out.get_rectd(constants::ImageEffectPropRegionOfDefinition)?)
 }
 
 fn set_params(
@@ -1881,13 +1940,16 @@ fn set_params(
 
     let inargs1 = PropertySet::new(
         "begin_instance_changed",
-        [(OfxPropChangeReason, OfxChangeUserEdited.into())],
+        [(
+            constants::PropChangeReason,
+            constants::ChangeUserEdited.into(),
+        )],
     )
     .into_object();
 
     if call_instance_changed {
         plugin.plugin.try_call_action(
-            OfxActionBeginInstanceChanged,
+            constants::ActionBeginInstanceChanged,
             instance.effect.clone().into(),
             inargs1.clone().into(),
             OfxPropertySetHandle::from(std::ptr::null_mut()),
@@ -1906,16 +1968,19 @@ fn set_params(
             let inargs2 = PropertySet::new(
                 "instance_changed",
                 [
-                    (OfxPropType, OfxTypeParameter.into()),
-                    (OfxPropName, name.as_str().into()),
-                    (OfxPropChangeReason, OfxChangeUserEdited.into()),
-                    (OfxPropTime, (0.0).into()),
-                    (OfxImageEffectPropRenderScale, [1.0, 1.0].into()),
+                    (constants::PropType, constants::TypeParameter.into()),
+                    (constants::PropName, name.as_str().into()),
+                    (
+                        constants::PropChangeReason,
+                        constants::ChangeUserEdited.into(),
+                    ),
+                    (constants::PropTime, (0.0).into()),
+                    (constants::ImageEffectPropRenderScale, [1.0, 1.0].into()),
                 ],
             )
             .into_object();
             plugin.plugin.try_call_action(
-                OfxActionInstanceChanged,
+                constants::ActionInstanceChanged,
                 instance.effect.clone().into(),
                 inargs2.clone().into(),
                 OfxPropertySetHandle::from(std::ptr::null_mut()),
@@ -1925,7 +1990,7 @@ fn set_params(
 
     if call_instance_changed {
         plugin.plugin.try_call_action(
-            OfxActionEndInstanceChanged,
+            constants::ActionEndInstanceChanged,
             instance.effect.clone().into(),
             inargs1.clone().into(),
             OfxPropertySetHandle::from(std::ptr::null_mut()),
@@ -1944,7 +2009,7 @@ fn describe(
 
     let plugin = context.get_plugin(plugin_name)?;
     plugin.plugin.try_call_action(
-        OfxActionDescribe,
+        constants::ActionDescribe,
         plugin.descriptor.clone().into(),
         OfxPropertySetHandle::from(std::ptr::null_mut()),
         OfxPropertySetHandle::from(std::ptr::null_mut()),
@@ -1967,7 +2032,7 @@ fn describe_filter(
         properties: PropertySet::new(
             "filter",
             [(
-                OfxPluginPropFilePath,
+                constants::PluginPropFilePath,
                 plugin.bundle.path.to_str().unwrap().into(),
             )],
         )
@@ -1979,14 +2044,14 @@ fn describe_filter(
     let filter_inargs = PropertySet::new(
         "filter_inargs",
         [(
-            OfxImageEffectPropContext,
-            OfxImageEffectContextFilter.into(),
+            constants::ImageEffectPropContext,
+            constants::ImageEffectContextFilter.into(),
         )],
     )
     .into_object();
     #[allow(clippy::redundant_clone)]
     plugin.plugin.try_call_action(
-        OfxImageEffectActionDescribeInContext,
+        constants::ImageEffectActionDescribeInContext,
         filter.clone().into(),
         OfxPropertySetHandle::from(filter_inargs.clone()),
         OfxPropertySetHandle::from(std::ptr::null_mut()),
@@ -2008,10 +2073,10 @@ fn configure_message_suite_responses(
         .iter()
         .rev()
         .map(|r| match r {
-            OK => OfxStatus::OK,
-            Yes => OfxStatus::ReplyYes,
-            No => OfxStatus::ReplyNo,
-            Failed => OfxStatus::Failed,
+            OK => ofxstatus::OK,
+            Yes => ofxstatus::ReplyYes,
+            No => ofxstatus::ReplyNo,
+            Failed => ofxstatus::Failed,
         })
         .collect::<Vec<_>>();
     Ok(())
@@ -2080,7 +2145,7 @@ fn process_command(command: &Command, context: &mut CommandContext) -> GenericRe
             let instance = context.get_instance(instance_name)?;
             let plugin = context.get_plugin(&instance.plugin_name)?;
             plugin.plugin.try_call_action(
-                OfxActionDestroyInstance,
+                constants::ActionDestroyInstance,
                 instance.effect.clone().into(),
                 OfxPropertySetHandle::from(std::ptr::null_mut()),
                 OfxPropertySetHandle::from(std::ptr::null_mut()),
@@ -2091,7 +2156,7 @@ fn process_command(command: &Command, context: &mut CommandContext) -> GenericRe
         UnloadPlugin { plugin_name } => {
             let plugin = context.get_plugin(plugin_name)?;
             plugin.plugin.try_call_action(
-                OfxActionUnload,
+                constants::ActionUnload,
                 OfxImageEffectHandle::from(std::ptr::null_mut()),
                 OfxPropertySetHandle::from(std::ptr::null_mut()),
                 OfxPropertySetHandle::from(std::ptr::null_mut()),
@@ -2197,48 +2262,90 @@ fn main() {
     let host_props = PropertySet::new(
         "host",
         [
-            (OfxPropName, "openfx-driver".into()),
-            (OfxPropLabel, "OpenFX Driver".into()),
-            (OfxPropVersion, version.into()),
-            (OfxPropVersionLabel, VERSION_NAME.into()),
-            (OfxPropAPIVersion, [1, 4].into()),
-            (OfxImageEffectHostPropIsBackground, false.into()),
-            (OfxImageEffectPropSupportsOverlays, false.into()),
-            (OfxImageEffectPropSupportsMultiResolution, false.into()),
-            (OfxImageEffectPropSupportsTiles, false.into()),
-            (OfxImageEffectPropTemporalClipAccess, false.into()),
-            (OfxImageEffectPropSupportsMultipleClipDepths, false.into()),
-            (OfxImageEffectPropSupportsMultipleClipPARs, false.into()),
-            (OfxImageEffectPropSetableFrameRate, false.into()),
-            (OfxImageEffectPropSetableFielding, false.into()),
-            (OfxImageEffectInstancePropSequentialRender, false.into()),
-            (OfxParamHostPropSupportsStringAnimation, false.into()),
-            (OfxParamHostPropSupportsCustomInteract, false.into()),
-            (OfxParamHostPropSupportsChoiceAnimation, false.into()),
-            (OfxParamHostPropSupportsStrChoiceAnimation, false.into()),
-            (OfxParamHostPropSupportsBooleanAnimation, false.into()),
-            (OfxParamHostPropSupportsCustomAnimation, false.into()),
-            (OfxParamHostPropSupportsParametricAnimation, false.into()),
+            (constants::PropName, "openfx-driver".into()),
+            (constants::PropLabel, "OpenFX Driver".into()),
+            (constants::PropVersion, version.into()),
+            (constants::PropVersionLabel, VERSION_NAME.into()),
+            (constants::PropAPIVersion, [1, 4].into()),
+            (constants::ImageEffectHostPropIsBackground, false.into()),
+            (constants::ImageEffectPropSupportsOverlays, false.into()),
+            (
+                constants::ImageEffectPropSupportsMultiResolution,
+                false.into(),
+            ),
+            (constants::ImageEffectPropSupportsTiles, false.into()),
+            (constants::ImageEffectPropTemporalClipAccess, false.into()),
+            (
+                constants::ImageEffectPropSupportsMultipleClipDepths,
+                false.into(),
+            ),
+            (
+                constants::ImageEffectPropSupportsMultipleClipPARs,
+                false.into(),
+            ),
+            (constants::ImageEffectPropSetableFrameRate, false.into()),
+            (constants::ImageEffectPropSetableFielding, false.into()),
+            (
+                constants::ImageEffectInstancePropSequentialRender,
+                false.into(),
+            ),
+            (
+                constants::ParamHostPropSupportsStringAnimation,
+                false.into(),
+            ),
+            (constants::ParamHostPropSupportsCustomInteract, false.into()),
+            (
+                constants::ParamHostPropSupportsChoiceAnimation,
+                false.into(),
+            ),
+            (
+                constants::ParamHostPropSupportsStrChoiceAnimation,
+                false.into(),
+            ),
+            (
+                constants::ParamHostPropSupportsBooleanAnimation,
+                false.into(),
+            ),
+            (
+                constants::ParamHostPropSupportsCustomAnimation,
+                false.into(),
+            ),
+            (
+                constants::ParamHostPropSupportsParametricAnimation,
+                false.into(),
+            ),
             // Resolve GPU extensions weirdly use "false"/"true" strings
-            (OfxImageEffectPropOpenCLRenderSupported, "false".into()),
-            (OfxImageEffectPropCudaRenderSupported, "false".into()),
-            (OfxImageEffectPropCudaStreamSupported, "false".into()),
-            (OfxImageEffectPropMetalRenderSupported, "false".into()),
-            (OfxImageEffectPropRenderQualityDraft, false.into()),
-            (OfxParamHostPropMaxParameters, (-1).into()),
-            (OfxParamHostPropMaxPages, 0.into()),
-            (OfxParamHostPropPageRowColumnCount, [0, 0].into()),
             (
-                OfxImageEffectPropSupportedComponents,
-                OfxImageComponentRGBA.into(),
+                constants::ImageEffectPropOpenCLRenderSupported,
+                "false".into(),
             ),
             (
-                OfxImageEffectPropSupportedContexts,
-                OfxImageEffectContextFilter.into(),
+                constants::ImageEffectPropCudaRenderSupported,
+                "false".into(),
             ),
             (
-                OfxImageEffectPropSupportedPixelDepths,
-                OfxBitDepthFloat.into(),
+                constants::ImageEffectPropCudaStreamSupported,
+                "false".into(),
+            ),
+            (
+                constants::ImageEffectPropMetalRenderSupported,
+                "false".into(),
+            ),
+            (constants::ImageEffectPropRenderQualityDraft, false.into()),
+            (constants::ParamHostPropMaxParameters, (-1).into()),
+            (constants::ParamHostPropMaxPages, 0.into()),
+            (constants::ParamHostPropPageRowColumnCount, [0, 0].into()),
+            (
+                constants::ImageEffectPropSupportedComponents,
+                constants::ImageComponentRGBA.into(),
+            ),
+            (
+                constants::ImageEffectPropSupportedContexts,
+                constants::ImageEffectContextFilter.into(),
+            ),
+            (
+                constants::ImageEffectPropSupportedPixelDepths,
+                constants::BitDepthFloat.into(),
             ),
         ],
     )

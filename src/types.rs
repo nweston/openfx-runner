@@ -1,8 +1,7 @@
 // Types defined by the OFX API
 #![allow(non_snake_case)]
-use serde::{Deserialize, Serialize};
-
-use std::ffi::{c_char, c_double, c_int, c_uint, c_void};
+pub use openfx_rs::types::{OfxRangeD, OfxRectD, OfxRectI, OfxStatus, OfxTime};
+use std::ffi::{c_char, c_int, c_uint, c_void};
 
 macro_rules! handle {
     ($name: ident) => {
@@ -31,72 +30,6 @@ handle!(OfxMutexHandle);
 handle!(OfxParamHandle);
 handle!(OfxParamSetHandle);
 handle!(OfxPropertySetHandle);
-
-// TODO: test that i32 and c_int are the same size
-#[repr(i32)]
-#[derive(Copy, Clone, Debug, PartialEq)]
-#[allow(dead_code)]
-pub enum OfxStatus {
-    OK = 0,
-    Failed = 1,
-    ErrFatal = 2,
-    ErrUnknown = 3,
-    ErrMissingHostFeature = 4,
-    ErrUnsupported = 5,
-    ErrExists = 6,
-    ErrFormat = 7,
-    ErrMemory = 8,
-    ErrBadHandle = 9,
-    ErrBadIndex = 10,
-    ErrValue = 11,
-    ReplyYes = 12,
-    ReplyNo = 13,
-    ReplyDefault = 14,
-    ErrImageFormat = 1000,
-    GLOutOfMemory = 1001,
-    GLRenderFailed = 1002,
-}
-
-impl OfxStatus {
-    pub fn failed(&self) -> bool {
-        match self {
-            Self::OK | Self::ReplyDefault => false,
-            _ => true,
-        }
-    }
-
-    pub fn succeeded(&self) -> bool {
-        !self.failed()
-    }
-}
-
-#[repr(C)]
-#[derive(Deserialize, Serialize, Debug, Copy, Clone)]
-pub struct OfxTime(pub c_double);
-
-#[repr(C)]
-#[derive(Deserialize, Serialize, Debug, Copy, Clone)]
-pub struct OfxRectD {
-    pub x1: c_double,
-    pub y1: c_double,
-    pub x2: c_double,
-    pub y2: c_double,
-}
-
-#[repr(C)]
-pub struct OfxRangeD {
-    pub min: c_double,
-    pub max: c_double,
-}
-
-#[repr(C)]
-#[derive(Deserialize, Serialize, Debug, Copy, Clone)]
-pub struct OfxRectI {
-    pub x1: c_int,
-    pub y1: c_int,
-    pub x2: c_int,
-    pub y2: c_int,
-}
 
 #[repr(C)]
 pub struct OfxHost {

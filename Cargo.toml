@@ -14,6 +14,8 @@ once_cell = "1.17.1"
 plist = "1.4.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.96"
+openfx-rs = {version = "0.1.0", features = ["derive_serde"] }
+openfx-sys = "0.1.0"
 
 [build-dependencies]
 cc = "1.0"

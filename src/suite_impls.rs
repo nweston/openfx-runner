@@ -1,9 +1,11 @@
 #![allow(non_snake_case)]
-use crate::strings::OfxStr;
 use crate::suites::*;
 use crate::types::*;
 use crate::{FromProperty, Handle, OfxError, ParamValue, PropertySet, PropertyValue};
 use libc::{free, posix_memalign};
+use openfx_rs::constants;
+use openfx_rs::constants::ofxstatus;
+use openfx_rs::strings::OfxStr;
 use std::collections::HashMap;
 use std::ffi::{c_char, c_double, c_int, c_uint, c_void, CStr};
 
@@ -15,7 +17,7 @@ extern "C" fn getPropertySet(
     unsafe {
         *propHandle = imageEffect.with_object(|effect| effect.properties.clone().into())
     };
-    OfxStatus::OK
+    ofxstatus::OK.into()
 }
 
 extern "C" fn getParamSet(
@@ -25,7 +27,7 @@ extern "C" fn getParamSet(
     unsafe {
         *paramSet = imageEffect.with_object(|effect| effect.param_set.clone().into());
     };
-    OfxStatus::OK
+    ofxstatus::OK.into()
 }
 
 extern "C" fn clipDefine(
@@ -45,7 +47,7 @@ extern "C" fn clipDefine(
             *propertySet = props.into();
         }
     }
-    OfxStatus::OK
+    ofxstatus::OK.into()
 }
 
 #[allow(unused_variables)]
@@ -55,19 +57,21 @@ extern "C" fn clipGetHandle(
     clip: *mut OfxImageClipHandle,
     propertySet: *mut OfxPropertySetHandle,
 ) -> OfxStatus {
-    imageEffect.with_object(|effect| {
-        if let Some(c) = effect.clips.get(OfxStr::from_ptr(name).as_str()) {
-            unsafe {
-                *clip = c.clone().into();
-                if !propertySet.is_null() {
-                    *propertySet = c.lock().properties.clone().into();
+    imageEffect
+        .with_object(|effect| {
+            if let Some(c) = effect.clips.get(OfxStr::from_ptr(name).as_str()) {
+                unsafe {
+                    *clip = c.clone().into();
+                    if !propertySet.is_null() {
+                        *propertySet = c.lock().properties.clone().into();
+                    }
                 }
+                ofxstatus::OK
+            } else {
+                ofxstatus::ErrUnknown
             }
-            OfxStatus::OK
-        } else {
-            OfxStatus::ErrUnknown
-        }
-    })
+        })
+        .into()
 }
 
 #[allow(unused_variables)]
@@ -79,7 +83,7 @@ extern "C" fn clipGetPropertySet(
         let handle = c.properties.clone().into();
         unsafe { *propHandle = handle }
     });
-    OfxStatus::OK
+    ofxstatus::OK.into()
 }
 
 #[allow(unused_variables)]
@@ -94,16 +98,17 @@ extern "C" fn clipGetImage(
             unsafe {
                 *imageHandle = image.properties.clone().into();
             }
-            OfxStatus::OK
+            ofxstatus::OK
         } else {
-            OfxStatus::Failed
+            ofxstatus::Failed
         }
     })
+    .into()
 }
 
 #[allow(unused_variables)]
 extern "C" fn clipReleaseImage(_imageHandle: OfxPropertySetHandle) -> OfxStatus {
-    OfxStatus::OK
+    ofxstatus::OK.into()
 }
 
 #[allow(unused_variables)]
@@ -117,11 +122,12 @@ extern "C" fn clipGetRegionOfDefinition(
             unsafe {
                 *bounds = rod;
             }
-            OfxStatus::OK
+            ofxstatus::OK
         } else {
-            OfxStatus::Failed
+            ofxstatus::Failed
         }
     })
+    .into()
 }
 
 #[allow(unused_variables)]
@@ -141,11 +147,11 @@ extern "C" fn imageMemoryAlloc(
         let mut ptr: *mut c_void = std::ptr::null_mut();
         // 16-byte alignment is required by the spec
         if posix_memalign(&mut ptr, 16, nBytes) != 0 {
-            return OfxStatus::ErrMemory;
+            return ofxstatus::ErrMemory.into();
         }
         *memoryHandle = ptr.into();
     };
-    OfxStatus::OK
+    ofxstatus::OK.into()
 }
 
 #[allow(unused_variables)]
@@ -153,7 +159,7 @@ extern "C" fn imageMemoryFree(memoryHandle: OfxImageMemoryHandle) -> OfxStatus {
     unsafe {
         free(memoryHandle.into());
     };
-    OfxStatus::OK
+    ofxstatus::OK.into()
 }
 
 #[allow(unused_variables)]
@@ -166,12 +172,12 @@ extern "C" fn imageMemoryLock(
     unsafe {
         *returnedPtr = memoryHandle.into();
     }
-    OfxStatus::OK
+    ofxstatus::OK.into()
 }
 #[allow(unused_variables)]
 extern "C" fn imageMemoryUnlock(memoryHandle: OfxImageMemoryHandle) -> OfxStatus {
     // Nothing to do
-    OfxStatus::OK
+    ofxstatus::OK.into()
 }
 
 pub const IMAGE_EFFECT_SUITE: OfxImageEffectSuiteV1 = OfxImageEffectSuiteV1 {
@@ -200,7 +206,7 @@ fn set_property(
     properties.with_object(|props| {
         props.set(OfxStr::from_ptr(name).as_str(), index as usize, value)
     });
-    OfxStatus::OK
+    ofxstatus::OK.into()
 }
 
 fn set_property_n<T: Into<PropertyValue> + Copy>(
@@ -213,7 +219,7 @@ fn set_property_n<T: Into<PropertyValue> + Copy>(
     for (i, v) in s.iter().enumerate() {
         set_property(properties, name, i as i32, (*v).into());
     }
-    OfxStatus::OK
+    ofxstatus::OK.into()
 }
 
 extern "C" fn propSetPointer(
@@ -306,14 +312,14 @@ fn get_property<T: FromProperty>(
             match p {
                 PropertyValue::Unset => Err(OfxError {
                     message: format!("{} {} not set in {}", key, index, props.name),
-                    status: OfxStatus::ErrUnknown,
+                    status: ofxstatus::ErrUnknown,
                 }),
                 _ => Err(OfxError {
                     message: format!(
                         "{} {} unexpected type: {:?} in {}",
                         key, index, p, props.name
                     ),
-                    status: OfxStatus::ErrUnknown,
+                    status: ofxstatus::ErrUnknown,
                 }),
             }
         }
@@ -346,10 +352,12 @@ extern "C" fn propGetPointer(
     index: c_int,
     value: *mut *const c_void,
 ) -> OfxStatus {
-    properties.with_object(|props| {
-        get_property(value, props, OfxStr::from_ptr(property), index as usize)
-            .get_status("propGetPointer: ")
-    })
+    properties
+        .with_object(|props| {
+            get_property(value, props, OfxStr::from_ptr(property), index as usize)
+                .get_status("propGetPointer: ")
+        })
+        .into()
 }
 
 extern "C" fn propGetString(
@@ -358,10 +366,12 @@ extern "C" fn propGetString(
     index: c_int,
     value: *mut *const c_char,
 ) -> OfxStatus {
-    properties.with_object(|props| {
-        get_property(value, props, OfxStr::from_ptr(property), index as usize)
-            .get_status("propGetString: ")
-    })
+    properties
+        .with_object(|props| {
+            get_property(value, props, OfxStr::from_ptr(property), index as usize)
+                .get_status("propGetString: ")
+        })
+        .into()
 }
 
 extern "C" fn propGetDouble(
@@ -370,10 +380,12 @@ extern "C" fn propGetDouble(
     index: c_int,
     value: *mut c_double,
 ) -> OfxStatus {
-    properties.with_object(|props| {
-        get_property(value, props, OfxStr::from_ptr(property), index as usize)
-            .get_status("propGetDouble: ")
-    })
+    properties
+        .with_object(|props| {
+            get_property(value, props, OfxStr::from_ptr(property), index as usize)
+                .get_status("propGetDouble: ")
+        })
+        .into()
 }
 
 extern "C" fn propGetInt(
@@ -382,10 +394,12 @@ extern "C" fn propGetInt(
     index: c_int,
     value: *mut c_int,
 ) -> OfxStatus {
-    properties.with_object(|props| {
-        get_property(value, props, OfxStr::from_ptr(property), index as usize)
-            .get_status("propGetInt: ")
-    })
+    properties
+        .with_object(|props| {
+            get_property(value, props, OfxStr::from_ptr(property), index as usize)
+                .get_status("propGetInt: ")
+        })
+        .into()
 }
 
 #[allow(unused_variables)]
@@ -395,10 +409,12 @@ extern "C" fn propGetPointerN(
     count: c_int,
     value: *mut *const c_void,
 ) -> OfxStatus {
-    properties.with_object(|props| {
-        get_property_array(value, props, OfxStr::from_ptr(property), count as usize)
-            .get_status("propGetPointerN: ")
-    })
+    properties
+        .with_object(|props| {
+            get_property_array(value, props, OfxStr::from_ptr(property), count as usize)
+                .get_status("propGetPointerN: ")
+        })
+        .into()
 }
 
 #[allow(unused_variables)]
@@ -408,10 +424,12 @@ extern "C" fn propGetStringN(
     count: c_int,
     value: *mut *const c_char,
 ) -> OfxStatus {
-    properties.with_object(|props| {
-        get_property_array(value, props, OfxStr::from_ptr(property), count as usize)
-            .get_status("propGetStringN: ")
-    })
+    properties
+        .with_object(|props| {
+            get_property_array(value, props, OfxStr::from_ptr(property), count as usize)
+                .get_status("propGetStringN: ")
+        })
+        .into()
 }
 
 #[allow(unused_variables)]
@@ -421,10 +439,12 @@ extern "C" fn propGetDoubleN(
     count: c_int,
     value: *mut c_double,
 ) -> OfxStatus {
-    properties.with_object(|props| {
-        get_property_array(value, props, OfxStr::from_ptr(property), count as usize)
-            .get_status("propGetDoubleN: ")
-    })
+    properties
+        .with_object(|props| {
+            get_property_array(value, props, OfxStr::from_ptr(property), count as usize)
+                .get_status("propGetDoubleN: ")
+        })
+        .into()
 }
 
 #[allow(unused_variables)]
@@ -434,10 +454,12 @@ extern "C" fn propGetIntN(
     count: c_int,
     value: *mut c_int,
 ) -> OfxStatus {
-    properties.with_object(|props| {
-        get_property_array(value, props, OfxStr::from_ptr(property), count as usize)
-            .get_status("propGetIntN: ")
-    })
+    properties
+        .with_object(|props| {
+            get_property_array(value, props, OfxStr::from_ptr(property), count as usize)
+                .get_status("propGetIntN: ")
+        })
+        .into()
 }
 
 #[allow(unused_variables)]
@@ -454,15 +476,17 @@ extern "C" fn propGetDimension(
     count: *mut c_int,
 ) -> OfxStatus {
     let key = OfxStr::from_ptr(property);
-    properties.with_object(|props| {
-        if let Some(values) = props.values.get(key.as_str()) {
-            unsafe { *count = values.0.len() as i32 }
-            OfxStatus::OK
-        } else {
-            eprintln!("propGetDimension: {} not found in {}", key, props.name);
-            OfxStatus::ErrUnknown
-        }
-    })
+    properties
+        .with_object(|props| {
+            if let Some(values) = props.values.get(key.as_str()) {
+                unsafe { *count = values.0.len() as i32 }
+                ofxstatus::OK
+            } else {
+                eprintln!("propGetDimension: {} not found in {}", key, props.name);
+                ofxstatus::ErrUnknown
+            }
+        })
+        .into()
 }
 
 pub const PROPERTY_SUITE: OfxPropertySuiteV1 = OfxPropertySuiteV1 {
@@ -498,7 +522,7 @@ extern "C" fn paramDefine(
         p.create_param(OfxStr::from_ptr(paramType), OfxStr::from_ptr(name))
     });
     unsafe { *propertySet = props }
-    OfxStatus::OK
+    ofxstatus::OK.into()
 }
 
 #[allow(unused_variables)]
@@ -508,19 +532,21 @@ extern "C" fn paramGetHandle(
     param: *mut OfxParamHandle,
     propertySet: *mut OfxPropertySetHandle,
 ) -> OfxStatus {
-    paramSet.with_object(|ps| {
-        if let Some(p) = ps.params.get(OfxStr::from_ptr(name).as_str()) {
-            unsafe {
-                *param = p.clone().into();
-                if !propertySet.is_null() {
-                    *propertySet = p.lock().properties.clone().into();
+    paramSet
+        .with_object(|ps| {
+            if let Some(p) = ps.params.get(OfxStr::from_ptr(name).as_str()) {
+                unsafe {
+                    *param = p.clone().into();
+                    if !propertySet.is_null() {
+                        *propertySet = p.lock().properties.clone().into();
+                    }
                 }
+                ofxstatus::OK
+            } else {
+                ofxstatus::ErrUnknown
             }
-            OfxStatus::OK
-        } else {
-            OfxStatus::ErrUnknown
-        }
-    })
+        })
+        .into()
 }
 
 extern "C" fn paramSetGetPropertySet(
@@ -528,7 +554,7 @@ extern "C" fn paramSetGetPropertySet(
     propHandle: *mut OfxPropertySetHandle,
 ) -> OfxStatus {
     unsafe { *propHandle = paramSet.with_object(|p| p.properties.clone().into()) };
-    OfxStatus::OK
+    ofxstatus::OK.into()
 }
 
 #[allow(unused_variables)]
@@ -539,7 +565,7 @@ extern "C" fn paramGetPropertySet(
     paramHandle.with_object(|param| unsafe {
         *propHandle = param.properties.clone().into();
     });
-    OfxStatus::OK
+    ofxstatus::OK.into()
 }
 
 extern "C" {
@@ -577,7 +603,7 @@ pub extern "C" fn param_get_value_1(
         Integer(v) => unsafe { *(value as *mut c_int) = v },
         ref x => panic!("unexpected param value {:?}", x),
     });
-    OfxStatus::OK
+    ofxstatus::OK.into()
 }
 
 #[no_mangle]
@@ -599,7 +625,7 @@ pub extern "C" fn param_get_value_2(
         },
         ref x => panic!("unexpected param value {:?}", x),
     });
-    OfxStatus::OK
+    ofxstatus::OK.into()
 }
 
 #[no_mangle]
@@ -628,7 +654,7 @@ pub extern "C" fn param_get_value_3(
         },
         ref x => panic!("unexpected param value {:?}", x),
     });
-    OfxStatus::OK
+    ofxstatus::OK.into()
 }
 
 #[no_mangle]
@@ -649,16 +675,14 @@ pub extern "C" fn param_get_value_4(
         },
         ref x => panic!("unexpected param value {:?}", x),
     });
-    OfxStatus::OK
+    ofxstatus::OK.into()
 }
 
 #[no_mangle]
 pub extern "C" fn param_get_type(handle: OfxParamHandle) -> *const c_char {
     handle.with_object(|p| {
-        if let Ok(PropertyValue::String(s)) = p
-            .properties
-            .lock()
-            .get(crate::constants::param::OfxParamPropType, 0)
+        if let Ok(PropertyValue::String(s)) =
+            p.properties.lock().get(constants::ParamPropType, 0)
         {
             s.as_c_str().as_ptr()
         } else {
@@ -742,12 +766,12 @@ extern "C" fn paramGetKeyIndex(
 
 #[allow(unused_variables)]
 extern "C" fn paramDeleteKey(paramHandle: OfxParamHandle, time: OfxTime) -> OfxStatus {
-    OfxStatus::OK
+    ofxstatus::OK.into()
 }
 
 #[allow(unused_variables)]
 extern "C" fn paramDeleteAllKeys(paramHandle: OfxParamHandle) -> OfxStatus {
-    OfxStatus::OK
+    ofxstatus::OK.into()
 }
 
 #[allow(unused_variables)]
@@ -765,12 +789,12 @@ extern "C" fn paramEditBegin(
     paramSet: OfxParamSetHandle,
     name: *const c_char,
 ) -> OfxStatus {
-    OfxStatus::OK
+    ofxstatus::OK.into()
 }
 
 #[allow(unused_variables)]
 extern "C" fn paramEditEnd(paramSet: OfxParamSetHandle) -> OfxStatus {
-    OfxStatus::OK
+    ofxstatus::OK.into()
 }
 
 pub const PARAMETER_SUITE: OfxParameterSuiteV1 = OfxParameterSuiteV1 {
@@ -819,14 +843,16 @@ extern "C" fn message(
     // TODO: we're assuming handle is a valid effect instance
     // handle. The spec also allows it to be an effect descriptor
     // handle, or null.
-    OfxImageEffectHandle::from(handle).with_object(|effect| {
-        // Consume a configured response from the effect instance, or
-        // if there are no responses return OK
-        effect
-            .message_suite_responses
-            .pop()
-            .unwrap_or(OfxStatus::OK)
-    })
+    OfxImageEffectHandle::from(handle)
+        .with_object(|effect| {
+            // Consume a configured response from the effect instance, or
+            // if there are no responses return OK
+            effect
+                .message_suite_responses
+                .pop()
+                .unwrap_or(ofxstatus::OK)
+        })
+        .into()
 }
 
 pub const MESSAGE_SUITE: OfxMessageSuiteV1 = OfxMessageSuiteV1 { message };
@@ -883,22 +909,22 @@ extern "C" fn mutexCreate(mutex: OfxMutexHandle, lockCount: c_int) -> OfxStatus 
 }
 
 #[allow(unused_variables)]
-extern "C" fn mutexDestroy(mutex: OfxMutexConstHandle) -> OfxStatus {
+extern "C" fn mutexDestroy(mutex: OfxMutexHandle) -> OfxStatus {
     panic!("Not implemented!")
 }
 
 #[allow(unused_variables)]
-extern "C" fn mutexLock(mutex: OfxMutexConstHandle) -> OfxStatus {
+extern "C" fn mutexLock(mutex: OfxMutexHandle) -> OfxStatus {
     panic!("Not implemented!")
 }
 
 #[allow(unused_variables)]
-extern "C" fn mutexUnLock(mutex: OfxMutexConstHandle) -> OfxStatus {
+extern "C" fn mutexUnLock(mutex: OfxMutexHandle) -> OfxStatus {
     panic!("Not implemented!")
 }
 
 #[allow(unused_variables)]
-extern "C" fn mutexTryLock(mutex: OfxMutexConstHandle) -> OfxStatus {
+extern "C" fn mutexTryLock(mutex: OfxMutexHandle) -> OfxStatus {
     panic!("Not implemented!")
 }
 

@@ -271,8 +271,8 @@ pub struct OfxMultiThreadSuiteV1 {
     pub multiThreadIndex: extern "C" fn(threadIndex: *mut c_int) -> OfxStatus,
     pub multiThreadIsSpawnedThread: extern "C" fn() -> c_int,
     pub mutexCreate: extern "C" fn(mutex: OfxMutexHandle, lockCount: c_int) -> OfxStatus,
-    pub mutexDestroy: extern "C" fn(mutex: OfxMutexConstHandle) -> OfxStatus,
-    pub mutexLock: extern "C" fn(mutex: OfxMutexConstHandle) -> OfxStatus,
-    pub mutexUnLock: extern "C" fn(mutex: OfxMutexConstHandle) -> OfxStatus,
-    pub mutexTryLock: extern "C" fn(mutex: OfxMutexConstHandle) -> OfxStatus,
+    pub mutexDestroy: extern "C" fn(mutex: OfxMutexHandle) -> OfxStatus,
+    pub mutexLock: extern "C" fn(mutex: OfxMutexHandle) -> OfxStatus,
+    pub mutexUnLock: extern "C" fn(mutex: OfxMutexHandle) -> OfxStatus,
+    pub mutexTryLock: extern "C" fn(mutex: OfxMutexHandle) -> OfxStatus,
 }
