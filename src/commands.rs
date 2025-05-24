@@ -1,6 +1,8 @@
 use crate::types::{OfxRectD, OfxRectI};
 use crate::{FrameNumber, ParamValue};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::ffi::c_int;
 
 #[derive(Deserialize, Serialize)]
 pub enum MessageSuiteResponses {
@@ -18,6 +20,13 @@ pub struct RenderLayout {
     pub render_window: Option<OfxRectI>,
     #[serde(default)]
     pub crop_inputs_to_roi: bool,
+}
+
+#[derive(Deserialize, Serialize)]
+pub enum PropertyValue {
+    String(String),
+    Double(f64),
+    Int(c_int),
 }
 
 fn default_frame_range() -> (FrameNumber, FrameNumber) {
@@ -89,5 +98,9 @@ pub enum Command {
     ConfigureMessageSuiteResponses {
         instance_name: String,
         responses: Vec<MessageSuiteResponses>,
+    },
+    /// Set properties of the OfxHost instance
+    SetHostProperties {
+        props: HashMap<String, Vec<PropertyValue>>,
     },
 }

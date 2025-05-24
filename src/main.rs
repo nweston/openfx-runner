@@ -2017,6 +2017,29 @@ fn configure_message_suite_responses(
     Ok(())
 }
 
+fn set_host_properties(
+    props: &HashMap<String, Vec<commands::PropertyValue>>,
+    context: &mut CommandContext,
+) {
+    context.host.host.with_object(|host_properties| {
+        props.iter().for_each(|(name, value)| {
+            host_properties.values.insert(
+                name.clone(),
+                Property(
+                    value
+                        .iter()
+                        .map(|v| match v {
+                            commands::PropertyValue::String(s) => (&(**s)).into(),
+                            commands::PropertyValue::Double(d) => (*d).into(),
+                            commands::PropertyValue::Int(i) => (*i).into(),
+                        })
+                        .collect(),
+                ),
+            );
+        })
+    });
+}
+
 fn process_command(command: &Command, context: &mut CommandContext) -> GenericResult {
     use commands::Command::*;
 
@@ -2118,6 +2141,10 @@ fn process_command(command: &Command, context: &mut CommandContext) -> GenericRe
             responses,
         } => {
             configure_message_suite_responses(instance_name, responses, context)?;
+            Ok(())
+        }
+        SetHostProperties { props } => {
+            set_host_properties(props, context);
             Ok(())
         }
     }
