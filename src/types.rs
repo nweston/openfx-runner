@@ -21,6 +21,16 @@ macro_rules! handle {
                 Self(openfx_rs::types::$name(ptr as _))
             }
         }
+        impl From<openfx_rs::types::$name> for $name {
+            fn from(h: openfx_rs::types::$name) -> Self {
+                Self(h)
+            }
+        }
+        impl From<$name> for openfx_rs::types::$name {
+            fn from(handle: $name) -> Self {
+                handle.0
+            }
+        }
         unsafe impl Send for $name {}
 
         impl std::hash::Hash for $name {

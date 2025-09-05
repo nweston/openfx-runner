@@ -21,7 +21,6 @@ use types::*;
 mod commands;
 use commands::*;
 mod suite_impls;
-mod suites;
 mod types;
 
 /// An integer frame time
@@ -141,13 +140,25 @@ trait Handle: Sized + Eq + std::hash::Hash + std::fmt::Debug + 'static {
             panic!("Bad handle {:?}", self);
         }
     }
+}
 
+trait WithObject<Obj> {
     /// Run a function on the underlying object.
     ///
     /// This uses as_arc() and can panic under the same conditions.
     fn with_object<F, T>(self, callback: F) -> T
     where
-        F: FnOnce(&mut Self::Object) -> T,
+        F: FnOnce(&mut Obj) -> T;
+}
+
+// Blanket impl for all handles
+impl<H> WithObject<H::Object> for H
+where
+    H: Handle,
+{
+    fn with_object<F, T>(self, callback: F) -> T
+    where
+        F: FnOnce(&mut H::Object) -> T,
     {
         let mutex = self.as_arc();
         let guard = &mut mutex.lock();
@@ -155,8 +166,19 @@ trait Handle: Sized + Eq + std::hash::Hash + std::fmt::Debug + 'static {
     }
 }
 
-/// Implement Handle and From traits for a handle. Provides convenient
-/// conversion between handles and corresponding objects.
+trait ToHandle: Clone {
+    type Handle;
+    fn to_handle(&self) -> Self::Handle
+    where
+        Self::Handle: From<Self>,
+    {
+        self.clone().into()
+    }
+}
+
+/// Implement traits for a handle and its associated object: From,
+/// Handle, WithObject, ToHandle. Provides convenient conversion
+/// between handles and corresponding objects.
 macro_rules! impl_handle {
     ($handle_name: ident, $object_name: ident) => {
         impl Handle for $handle_name {
@@ -175,6 +197,21 @@ macro_rules! impl_handle {
                     .lock()
                     .unwrap()
                     .get_handle(obj)
+            }
+        }
+
+        impl ToHandle for Object<$object_name> {
+            type Handle = $handle_name;
+        }
+
+        // Convert openfx_rs handle to our wrapper, and call
+        // with_object on that
+        impl WithObject<$object_name> for openfx_rs::types::$handle_name {
+            fn with_object<F, T>(self, callback: F) -> T
+            where
+                F: FnOnce(&mut $object_name) -> T,
+            {
+                $handle_name::from(self).with_object(callback)
             }
         }
     };
@@ -586,9 +623,7 @@ impl Image {
         let offset = self.bounds.width() as isize * (bounds.y1 - self.bounds.y1) as isize
             + (bounds.x1 - self.bounds.x1) as isize;
         let data = unsafe {
-            PropertyValue::Pointer(Addr(
-                self.pixels.as_ptr().offset(offset) as *const c_void
-            ))
+            PropertyValue::Pointer(Addr(self.pixels.as_ptr().offset(offset) as _))
         };
 
         let mut props = self.properties.lock();
@@ -978,19 +1013,19 @@ trait FromProperty: Sized {
     fn from_property(value: &PropertyValue) -> Option<Self>;
 }
 
-impl FromProperty for *const c_void {
+impl FromProperty for *mut c_void {
     fn from_property(value: &PropertyValue) -> Option<Self> {
         match value {
-            PropertyValue::Pointer(Addr(p)) => Some(*p),
+            PropertyValue::Pointer(Addr(p)) => Some(*p as _),
             _ => None,
         }
     }
 }
 
-impl FromProperty for *const c_char {
+impl FromProperty for *mut c_char {
     fn from_property(value: &PropertyValue) -> Option<Self> {
         match value {
-            PropertyValue::String(s) => Some(s.as_ptr()),
+            PropertyValue::String(s) => Some(s.as_ptr() as _),
             _ => None,
         }
     }

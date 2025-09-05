@@ -1,39 +1,48 @@
 #![allow(non_snake_case)]
-use crate::suites::*;
 use crate::types::*;
-use crate::{FromProperty, Handle, OfxError, ParamValue, PropertySet, PropertyValue};
+use crate::{
+    FromProperty, OfxError, ParamValue, PropertySet, PropertyValue, ToHandle, WithObject,
+};
 use libc::{free, posix_memalign};
 use openfx_rs::constants;
 use openfx_rs::constants::ofxstatus;
 use openfx_rs::strings::OfxStr;
+// Import directly from openfx_sys. openfx_rs provides wrappers which
+// are convenient for a plugin, but not useful for supplying our own
+// suite implementations
+use openfx_sys::{
+    OfxImageEffectSuiteV1, OfxMemorySuiteV1, OfxMessageSuiteV1, OfxMultiThreadSuiteV1,
+    OfxParameterSuiteV1, OfxPropertySuiteV1,
+};
 use std::collections::HashMap;
 use std::ffi::{c_char, c_double, c_int, c_uint, c_void, CStr};
 
 // ========= ImageEffectSuite =========
 extern "C" fn getPropertySet(
-    imageEffect: OfxImageEffectHandle,
-    propHandle: *mut OfxPropertySetHandle,
+    imageEffect: openfx_rs::types::OfxImageEffectHandle,
+    propHandle: *mut openfx_rs::types::OfxPropertySetHandle,
 ) -> OfxStatus {
     unsafe {
-        *propHandle = imageEffect.with_object(|effect| effect.properties.clone().into())
+        *propHandle =
+            imageEffect.with_object(|effect| effect.properties.to_handle().into())
     };
     ofxstatus::OK.into()
 }
 
 extern "C" fn getParamSet(
-    imageEffect: OfxImageEffectHandle,
-    paramSet: *mut OfxParamSetHandle,
+    imageEffect: openfx_rs::types::OfxImageEffectHandle,
+    paramSet: *mut openfx_rs::types::OfxParamSetHandle,
 ) -> OfxStatus {
     unsafe {
-        *paramSet = imageEffect.with_object(|effect| effect.param_set.clone().into());
+        *paramSet = imageEffect.with_object(|effect| effect.param_set.to_handle().into())
     };
     ofxstatus::OK.into()
 }
 
 extern "C" fn clipDefine(
-    imageEffect: OfxImageEffectHandle,
+    imageEffect: openfx_rs::types::OfxImageEffectHandle,
     name: *const c_char,
-    propertySet: *mut OfxPropertySetHandle,
+    propertySet: *mut openfx_rs::types::OfxPropertySetHandle,
 ) -> OfxStatus {
     let props = imageEffect.with_object(|effect| {
         effect
@@ -44,7 +53,7 @@ extern "C" fn clipDefine(
     });
     if !propertySet.is_null() {
         unsafe {
-            *propertySet = props.into();
+            *propertySet = props.to_handle().into();
         }
     }
     ofxstatus::OK.into()
@@ -52,18 +61,18 @@ extern "C" fn clipDefine(
 
 #[allow(unused_variables)]
 extern "C" fn clipGetHandle(
-    imageEffect: OfxImageEffectHandle,
+    imageEffect: openfx_rs::types::OfxImageEffectHandle,
     name: *const c_char,
-    clip: *mut OfxImageClipHandle,
-    propertySet: *mut OfxPropertySetHandle,
+    clip: *mut openfx_rs::types::OfxImageClipHandle,
+    propertySet: *mut openfx_rs::types::OfxPropertySetHandle,
 ) -> OfxStatus {
     imageEffect
         .with_object(|effect| {
             if let Some(c) = effect.clips.get(OfxStr::from_ptr(name).as_str()) {
                 unsafe {
-                    *clip = c.clone().into();
+                    *clip = c.to_handle().into();
                     if !propertySet.is_null() {
-                        *propertySet = c.lock().properties.clone().into();
+                        *propertySet = c.lock().properties.to_handle().into();
                     }
                 }
                 ofxstatus::OK
@@ -76,11 +85,11 @@ extern "C" fn clipGetHandle(
 
 #[allow(unused_variables)]
 extern "C" fn clipGetPropertySet(
-    clip: OfxImageClipHandle,
-    propHandle: *mut OfxPropertySetHandle,
+    clip: openfx_rs::types::OfxImageClipHandle,
+    propHandle: *mut openfx_rs::types::OfxPropertySetHandle,
 ) -> OfxStatus {
     clip.with_object(|c| {
-        let handle = c.properties.clone().into();
+        let handle = c.properties.to_handle().into();
         unsafe { *propHandle = handle }
     });
     ofxstatus::OK.into()
@@ -88,15 +97,15 @@ extern "C" fn clipGetPropertySet(
 
 #[allow(unused_variables)]
 extern "C" fn clipGetImage(
-    clip: OfxImageClipHandle,
+    clip: openfx_rs::types::OfxImageClipHandle,
     time: OfxTime,
     _region: *const OfxRectD,
-    imageHandle: *mut OfxPropertySetHandle,
+    imageHandle: *mut openfx_rs::types::OfxPropertySetHandle,
 ) -> OfxStatus {
     clip.with_object(|c| {
         if let Some(ref image) = c.images.image_at_time(time) {
             unsafe {
-                *imageHandle = image.properties.clone().into();
+                *imageHandle = image.properties.to_handle().into();
             }
             ofxstatus::OK
         } else {
@@ -107,13 +116,15 @@ extern "C" fn clipGetImage(
 }
 
 #[allow(unused_variables)]
-extern "C" fn clipReleaseImage(_imageHandle: OfxPropertySetHandle) -> OfxStatus {
+extern "C" fn clipReleaseImage(
+    _imageHandle: openfx_rs::types::OfxPropertySetHandle,
+) -> OfxStatus {
     ofxstatus::OK.into()
 }
 
 #[allow(unused_variables)]
 extern "C" fn clipGetRegionOfDefinition(
-    clip: OfxImageClipHandle,
+    clip: openfx_rs::types::OfxImageClipHandle,
     time: OfxTime,
     bounds: *mut OfxRectD,
 ) -> OfxStatus {
@@ -131,15 +142,15 @@ extern "C" fn clipGetRegionOfDefinition(
 }
 
 #[allow(unused_variables)]
-extern "C" fn abort(imageEffect: OfxImageEffectHandle) -> c_int {
+extern "C" fn abort(imageEffect: openfx_rs::types::OfxImageEffectHandle) -> c_int {
     return 0;
 }
 
 #[allow(unused_variables)]
 extern "C" fn imageMemoryAlloc(
-    instanceHandle: OfxImageEffectHandle,
+    instanceHandle: openfx_rs::types::OfxImageEffectHandle,
     nBytes: usize,
-    memoryHandle: *mut OfxImageMemoryHandle,
+    memoryHandle: *mut openfx_rs::types::OfxImageMemoryHandle,
 ) -> OfxStatus {
     unsafe {
         // Allocate memory directly and return the pointer as a
@@ -149,56 +160,60 @@ extern "C" fn imageMemoryAlloc(
         if posix_memalign(&mut ptr, 16, nBytes) != 0 {
             return ofxstatus::ErrMemory.into();
         }
-        *memoryHandle = ptr.into();
+        *memoryHandle = openfx_rs::types::OfxImageMemoryHandle(ptr as _);
     };
     ofxstatus::OK.into()
 }
 
 #[allow(unused_variables)]
-extern "C" fn imageMemoryFree(memoryHandle: OfxImageMemoryHandle) -> OfxStatus {
+extern "C" fn imageMemoryFree(
+    memoryHandle: openfx_rs::types::OfxImageMemoryHandle,
+) -> OfxStatus {
     unsafe {
-        free(memoryHandle.into());
+        free(memoryHandle.0 as _);
     };
     ofxstatus::OK.into()
 }
 
 #[allow(unused_variables)]
 extern "C" fn imageMemoryLock(
-    memoryHandle: OfxImageMemoryHandle,
+    memoryHandle: openfx_rs::types::OfxImageMemoryHandle,
     returnedPtr: *mut *mut c_void,
 ) -> OfxStatus {
     // The handle is already a pointer to allocated memory, just
     // return it
     unsafe {
-        *returnedPtr = memoryHandle.into();
+        *returnedPtr = memoryHandle.0 as _;
     }
     ofxstatus::OK.into()
 }
 #[allow(unused_variables)]
-extern "C" fn imageMemoryUnlock(memoryHandle: OfxImageMemoryHandle) -> OfxStatus {
+extern "C" fn imageMemoryUnlock(
+    memoryHandle: openfx_rs::types::OfxImageMemoryHandle,
+) -> OfxStatus {
     // Nothing to do
     ofxstatus::OK.into()
 }
 
 pub const IMAGE_EFFECT_SUITE: OfxImageEffectSuiteV1 = OfxImageEffectSuiteV1 {
-    getPropertySet,
-    getParamSet,
-    clipDefine,
-    clipGetHandle,
-    clipGetPropertySet,
-    clipGetImage,
-    clipReleaseImage,
-    clipGetRegionOfDefinition,
-    abort,
-    imageMemoryAlloc,
-    imageMemoryFree,
-    imageMemoryLock,
-    imageMemoryUnlock,
+    getPropertySet: Some(getPropertySet),
+    getParamSet: Some(getParamSet),
+    clipDefine: Some(clipDefine),
+    clipGetHandle: Some(clipGetHandle),
+    clipGetPropertySet: Some(clipGetPropertySet),
+    clipGetImage: Some(clipGetImage),
+    clipReleaseImage: Some(clipReleaseImage),
+    clipGetRegionOfDefinition: Some(clipGetRegionOfDefinition),
+    abort: Some(abort),
+    imageMemoryAlloc: Some(imageMemoryAlloc),
+    imageMemoryFree: Some(imageMemoryFree),
+    imageMemoryLock: Some(imageMemoryLock),
+    imageMemoryUnlock: Some(imageMemoryUnlock),
 };
 
 // ========= Property Suite =========
 fn set_property(
-    properties: OfxPropertySetHandle,
+    properties: openfx_rs::types::OfxPropertySetHandle,
     name: *const c_char,
     index: c_int,
     value: PropertyValue,
@@ -210,7 +225,7 @@ fn set_property(
 }
 
 fn set_property_n<T: Into<PropertyValue> + Copy>(
-    properties: OfxPropertySetHandle,
+    properties: openfx_rs::types::OfxPropertySetHandle,
     name: *const c_char,
     count: c_int,
     value: *const T,
@@ -223,7 +238,7 @@ fn set_property_n<T: Into<PropertyValue> + Copy>(
 }
 
 extern "C" fn propSetPointer(
-    properties: OfxPropertySetHandle,
+    properties: openfx_rs::types::OfxPropertySetHandle,
     property: *const c_char,
     index: c_int,
     value: *mut c_void,
@@ -232,7 +247,7 @@ extern "C" fn propSetPointer(
 }
 
 extern "C" fn propSetString(
-    properties: OfxPropertySetHandle,
+    properties: openfx_rs::types::OfxPropertySetHandle,
     property: *const c_char,
     index: c_int,
     value: *const c_char,
@@ -241,7 +256,7 @@ extern "C" fn propSetString(
 }
 
 extern "C" fn propSetDouble(
-    properties: OfxPropertySetHandle,
+    properties: openfx_rs::types::OfxPropertySetHandle,
     property: *const c_char,
     index: c_int,
     value: c_double,
@@ -250,7 +265,7 @@ extern "C" fn propSetDouble(
 }
 
 extern "C" fn propSetInt(
-    properties: OfxPropertySetHandle,
+    properties: openfx_rs::types::OfxPropertySetHandle,
     property: *const c_char,
     index: c_int,
     value: c_int,
@@ -260,7 +275,7 @@ extern "C" fn propSetInt(
 
 #[allow(unused_variables)]
 extern "C" fn propSetPointerN(
-    properties: OfxPropertySetHandle,
+    properties: openfx_rs::types::OfxPropertySetHandle,
     property: *const c_char,
     count: c_int,
     value: *const *mut c_void,
@@ -270,7 +285,7 @@ extern "C" fn propSetPointerN(
 
 #[allow(unused_variables)]
 extern "C" fn propSetStringN(
-    properties: OfxPropertySetHandle,
+    properties: openfx_rs::types::OfxPropertySetHandle,
     property: *const c_char,
     count: c_int,
     value: *const *const c_char,
@@ -280,7 +295,7 @@ extern "C" fn propSetStringN(
 
 #[allow(unused_variables)]
 extern "C" fn propSetDoubleN(
-    properties: OfxPropertySetHandle,
+    properties: openfx_rs::types::OfxPropertySetHandle,
     property: *const c_char,
     count: c_int,
     value: *const c_double,
@@ -290,7 +305,7 @@ extern "C" fn propSetDoubleN(
 
 #[allow(unused_variables)]
 extern "C" fn propSetIntN(
-    properties: OfxPropertySetHandle,
+    properties: openfx_rs::types::OfxPropertySetHandle,
     property: *const c_char,
     count: c_int,
     value: *const c_int,
@@ -347,10 +362,10 @@ fn get_property_array<T: FromProperty>(
 }
 
 extern "C" fn propGetPointer(
-    properties: OfxPropertySetHandle,
+    properties: openfx_rs::types::OfxPropertySetHandle,
     property: *const c_char,
     index: c_int,
-    value: *mut *const c_void,
+    value: *mut *mut c_void,
 ) -> OfxStatus {
     properties
         .with_object(|props| {
@@ -361,10 +376,10 @@ extern "C" fn propGetPointer(
 }
 
 extern "C" fn propGetString(
-    properties: OfxPropertySetHandle,
+    properties: openfx_rs::types::OfxPropertySetHandle,
     property: *const c_char,
     index: c_int,
-    value: *mut *const c_char,
+    value: *mut *mut c_char,
 ) -> OfxStatus {
     properties
         .with_object(|props| {
@@ -375,7 +390,7 @@ extern "C" fn propGetString(
 }
 
 extern "C" fn propGetDouble(
-    properties: OfxPropertySetHandle,
+    properties: openfx_rs::types::OfxPropertySetHandle,
     property: *const c_char,
     index: c_int,
     value: *mut c_double,
@@ -389,7 +404,7 @@ extern "C" fn propGetDouble(
 }
 
 extern "C" fn propGetInt(
-    properties: OfxPropertySetHandle,
+    properties: openfx_rs::types::OfxPropertySetHandle,
     property: *const c_char,
     index: c_int,
     value: *mut c_int,
@@ -404,10 +419,10 @@ extern "C" fn propGetInt(
 
 #[allow(unused_variables)]
 extern "C" fn propGetPointerN(
-    properties: OfxPropertySetHandle,
+    properties: openfx_rs::types::OfxPropertySetHandle,
     property: *const c_char,
     count: c_int,
-    value: *mut *const c_void,
+    value: *mut *mut c_void,
 ) -> OfxStatus {
     properties
         .with_object(|props| {
@@ -419,10 +434,10 @@ extern "C" fn propGetPointerN(
 
 #[allow(unused_variables)]
 extern "C" fn propGetStringN(
-    properties: OfxPropertySetHandle,
+    properties: openfx_rs::types::OfxPropertySetHandle,
     property: *const c_char,
     count: c_int,
-    value: *mut *const c_char,
+    value: *mut *mut c_char,
 ) -> OfxStatus {
     properties
         .with_object(|props| {
@@ -434,7 +449,7 @@ extern "C" fn propGetStringN(
 
 #[allow(unused_variables)]
 extern "C" fn propGetDoubleN(
-    properties: OfxPropertySetHandle,
+    properties: openfx_rs::types::OfxPropertySetHandle,
     property: *const c_char,
     count: c_int,
     value: *mut c_double,
@@ -449,7 +464,7 @@ extern "C" fn propGetDoubleN(
 
 #[allow(unused_variables)]
 extern "C" fn propGetIntN(
-    properties: OfxPropertySetHandle,
+    properties: openfx_rs::types::OfxPropertySetHandle,
     property: *const c_char,
     count: c_int,
     value: *mut c_int,
@@ -464,14 +479,14 @@ extern "C" fn propGetIntN(
 
 #[allow(unused_variables)]
 extern "C" fn propReset(
-    properties: OfxPropertySetHandle,
+    properties: openfx_rs::types::OfxPropertySetHandle,
     property: *const c_char,
 ) -> OfxStatus {
     panic!("Not implemented!");
 }
 
 extern "C" fn propGetDimension(
-    properties: OfxPropertySetHandle,
+    properties: openfx_rs::types::OfxPropertySetHandle,
     property: *const c_char,
     count: *mut c_int,
 ) -> OfxStatus {
@@ -490,55 +505,55 @@ extern "C" fn propGetDimension(
 }
 
 pub const PROPERTY_SUITE: OfxPropertySuiteV1 = OfxPropertySuiteV1 {
-    propSetPointer,
-    propSetString,
-    propSetDouble,
-    propSetInt,
-    propSetPointerN,
-    propSetStringN,
-    propSetDoubleN,
-    propSetIntN,
-    propGetPointer,
-    propGetString,
-    propGetDouble,
-    propGetInt,
-    propGetPointerN,
-    propGetStringN,
-    propGetDoubleN,
-    propGetIntN,
-    propReset,
-    propGetDimension,
+    propSetPointer: Some(propSetPointer),
+    propSetString: Some(propSetString),
+    propSetDouble: Some(propSetDouble),
+    propSetInt: Some(propSetInt),
+    propSetPointerN: Some(propSetPointerN),
+    propSetStringN: Some(propSetStringN),
+    propSetDoubleN: Some(propSetDoubleN),
+    propSetIntN: Some(propSetIntN),
+    propGetPointer: Some(propGetPointer),
+    propGetString: Some(propGetString),
+    propGetDouble: Some(propGetDouble),
+    propGetInt: Some(propGetInt),
+    propGetPointerN: Some(propGetPointerN),
+    propGetStringN: Some(propGetStringN),
+    propGetDoubleN: Some(propGetDoubleN),
+    propGetIntN: Some(propGetIntN),
+    propReset: Some(propReset),
+    propGetDimension: Some(propGetDimension),
 };
 
 // ========= Parameter suite =========
 #[allow(unused_variables)]
 extern "C" fn paramDefine(
-    paramSet: OfxParamSetHandle,
+    paramSet: openfx_rs::types::OfxParamSetHandle,
     paramType: *const c_char,
     name: *const c_char,
-    propertySet: *mut OfxPropertySetHandle,
+    propertySet: *mut openfx_rs::types::OfxPropertySetHandle,
 ) -> OfxStatus {
     let props = paramSet.with_object(|p| {
         p.create_param(OfxStr::from_ptr(paramType), OfxStr::from_ptr(name))
     });
-    unsafe { *propertySet = props }
+    unsafe { *propertySet = props.into() }
     ofxstatus::OK.into()
 }
 
 #[allow(unused_variables)]
 extern "C" fn paramGetHandle(
-    paramSet: OfxParamSetHandle,
+    paramSet: openfx_rs::types::OfxParamSetHandle,
     name: *const c_char,
-    param: *mut OfxParamHandle,
-    propertySet: *mut OfxPropertySetHandle,
+    param: *mut openfx_rs::types::OfxParamHandle,
+    propertySet: *mut openfx_rs::types::OfxPropertySetHandle,
 ) -> OfxStatus {
     paramSet
         .with_object(|ps| {
             if let Some(p) = ps.params.get(OfxStr::from_ptr(name).as_str()) {
                 unsafe {
-                    *param = p.clone().into();
+                    *param = p.to_handle().into();
                     if !propertySet.is_null() {
-                        *propertySet = p.lock().properties.clone().into();
+                        *propertySet = p.lock().properties.to_handle().into();
                     }
                 }
                 ofxstatus::OK
@@ -550,33 +565,43 @@ extern "C" fn paramGetHandle(
 }
 
 extern "C" fn paramSetGetPropertySet(
-    paramSet: OfxParamSetHandle,
-    propHandle: *mut OfxPropertySetHandle,
+    paramSet: openfx_rs::types::OfxParamSetHandle,
+    propHandle: *mut openfx_rs::types::OfxPropertySetHandle,
 ) -> OfxStatus {
-    unsafe { *propHandle = paramSet.with_object(|p| p.properties.clone().into()) };
+    unsafe { *propHandle = paramSet.with_object(|p| p.properties.to_handle().into()) };
     ofxstatus::OK.into()
 }
 
 #[allow(unused_variables)]
 extern "C" fn paramGetPropertySet(
-    paramHandle: OfxParamHandle,
-    propHandle: *mut OfxPropertySetHandle,
+    paramHandle: openfx_rs::types::OfxParamHandle,
+    propHandle: *mut openfx_rs::types::OfxPropertySetHandle,
 ) -> OfxStatus {
     paramHandle.with_object(|param| unsafe {
-        *propHandle = param.properties.clone().into();
+        *propHandle = param.properties.to_handle().into();
     });
     ofxstatus::OK.into()
 }
 
 extern "C" {
-    fn paramGetValue(paramHandle: OfxParamHandle, ...) -> OfxStatus;
-    fn paramGetValueAtTime(paramHandle: OfxParamHandle, time: OfxTime, ...) -> OfxStatus;
-    fn paramSetValue(paramHandle: OfxParamHandle, ...) -> OfxStatus;
-    fn paramSetValueAtTime(paramHandle: OfxParamHandle, time: OfxTime, ...) -> OfxStatus;
+    fn paramGetValue(paramHandle: openfx_rs::types::OfxParamHandle, ...) -> OfxStatus;
+    fn paramGetValueAtTime(
+        paramHandle: openfx_rs::types::OfxParamHandle,
+        time: OfxTime,
+        ...
+    ) -> OfxStatus;
+    fn paramSetValue(paramHandle: openfx_rs::types::OfxParamHandle, ...) -> OfxStatus;
+    fn paramSetValueAtTime(
+        paramHandle: openfx_rs::types::OfxParamHandle,
+        time: OfxTime,
+        ...
+    ) -> OfxStatus;
 }
 
 #[no_mangle]
-pub extern "C" fn param_value_count(paramHandle: OfxParamHandle) -> c_int {
+pub extern "C" fn param_value_count(
+    paramHandle: openfx_rs::types::OfxParamHandle,
+) -> c_int {
     use ParamValue::*;
     paramHandle.with_object(|p| match p.value {
         Double2D(..) | Integer2D(..) => 2,
@@ -589,7 +614,7 @@ pub extern "C" fn param_value_count(paramHandle: OfxParamHandle) -> c_int {
 
 #[no_mangle]
 pub extern "C" fn param_get_value_1(
-    paramHandle: OfxParamHandle,
+    paramHandle: openfx_rs::types::OfxParamHandle,
     value: *mut c_void,
 ) -> OfxStatus {
     use ParamValue::*;
@@ -609,7 +634,7 @@ pub extern "C" fn param_get_value_1(
 #[no_mangle]
 #[allow(unused_variables)]
 pub extern "C" fn param_get_value_2(
-    paramHandle: OfxParamHandle,
+    paramHandle: openfx_rs::types::OfxParamHandle,
     value1: *mut c_void,
     value2: *mut c_void,
 ) -> OfxStatus {
@@ -630,7 +655,7 @@ pub extern "C" fn param_get_value_2(
 
 #[no_mangle]
 pub extern "C" fn param_get_value_3(
-    paramHandle: OfxParamHandle,
+    paramHandle: openfx_rs::types::OfxParamHandle,
     value1: *mut c_void,
     value2: *mut c_void,
     value3: *mut c_void,
@@ -659,7 +684,7 @@ pub extern "C" fn param_get_value_3(
 
 #[no_mangle]
 pub extern "C" fn param_get_value_4(
-    paramHandle: OfxParamHandle,
+    paramHandle: openfx_rs::types::OfxParamHandle,
     value1: *mut c_void,
     value2: *mut c_void,
     value3: *mut c_void,
@@ -679,7 +704,9 @@ pub extern "C" fn param_get_value_4(
 }
 
 #[no_mangle]
-pub extern "C" fn param_get_type(handle: OfxParamHandle) -> *const c_char {
+pub extern "C" fn param_get_type(
+    handle: openfx_rs::types::OfxParamHandle,
+) -> *const c_char {
     handle.with_object(|p| {
         if let Ok(PropertyValue::String(s)) =
             p.properties.lock().get(constants::ParamPropType, 0)
@@ -692,27 +719,42 @@ pub extern "C" fn param_get_type(handle: OfxParamHandle) -> *const c_char {
 }
 
 #[no_mangle]
-pub extern "C" fn param_set_value_boolean(handle: OfxParamHandle, value: i32) {
+pub extern "C" fn param_set_value_boolean(
+    handle: openfx_rs::types::OfxParamHandle,
+    value: i32,
+) {
     handle.with_object(|p| p.value = ParamValue::Boolean(value != 0));
 }
 
 #[no_mangle]
-pub extern "C" fn param_set_value_integer(handle: OfxParamHandle, value: i32) {
+pub extern "C" fn param_set_value_integer(
+    handle: openfx_rs::types::OfxParamHandle,
+    value: i32,
+) {
     handle.with_object(|p| p.value = ParamValue::Integer(value));
 }
 
 #[no_mangle]
-pub extern "C" fn param_set_value_choice(handle: OfxParamHandle, value: i32) {
+pub extern "C" fn param_set_value_choice(
+    handle: openfx_rs::types::OfxParamHandle,
+    value: i32,
+) {
     handle.with_object(|p| p.value = ParamValue::Choice(value as usize));
 }
 
 #[no_mangle]
-pub extern "C" fn param_set_value_double(handle: OfxParamHandle, value: f64) {
+pub extern "C" fn param_set_value_double(
+    handle: openfx_rs::types::OfxParamHandle,
+    value: f64,
+) {
     handle.with_object(|p| p.value = ParamValue::Double(value));
 }
 
 #[no_mangle]
-pub extern "C" fn param_set_value_string(handle: OfxParamHandle, value: *const c_char) {
+pub extern "C" fn param_set_value_string(
+    handle: openfx_rs::types::OfxParamHandle,
+    value: *const c_char,
+) {
     handle.with_object(|p| {
         // Note: not using OfxStr here. String param values are stored
         // as CString and don't need to be UTF-8
@@ -721,25 +763,8 @@ pub extern "C" fn param_set_value_string(handle: OfxParamHandle, value: *const c
 }
 
 #[allow(unused_variables)]
-extern "C" fn paramGetDerivative(
-    paramHandle: OfxParamHandle,
-    time: OfxTime,
-) -> OfxStatus {
-    panic!("Not implemented!")
-}
-
-#[allow(unused_variables)]
-extern "C" fn paramGetIntegral(
-    paramHandle: OfxParamHandle,
-    time1: OfxTime,
-    time2: OfxTime,
-) -> OfxStatus {
-    panic!("Not implemented!")
-}
-
-#[allow(unused_variables)]
 extern "C" fn paramGetNumKeys(
-    paramHandle: OfxParamHandle,
+    paramHandle: openfx_rs::types::OfxParamHandle,
     numberOfKeys: *mut c_uint,
 ) -> OfxStatus {
     panic!("Not implemented!")
@@ -747,7 +772,7 @@ extern "C" fn paramGetNumKeys(
 
 #[allow(unused_variables)]
 extern "C" fn paramGetKeyTime(
-    paramHandle: OfxParamHandle,
+    paramHandle: openfx_rs::types::OfxParamHandle,
     nthKey: c_uint,
     time: *mut OfxTime,
 ) -> OfxStatus {
@@ -756,7 +781,7 @@ extern "C" fn paramGetKeyTime(
 
 #[allow(unused_variables)]
 extern "C" fn paramGetKeyIndex(
-    paramHandle: OfxParamHandle,
+    paramHandle: openfx_rs::types::OfxParamHandle,
     time: OfxTime,
     direction: c_int,
     index: *mut c_int,
@@ -765,19 +790,24 @@ extern "C" fn paramGetKeyIndex(
 }
 
 #[allow(unused_variables)]
-extern "C" fn paramDeleteKey(paramHandle: OfxParamHandle, time: OfxTime) -> OfxStatus {
+extern "C" fn paramDeleteKey(
+    paramHandle: openfx_rs::types::OfxParamHandle,
+    time: OfxTime,
+) -> OfxStatus {
     ofxstatus::OK.into()
 }
 
 #[allow(unused_variables)]
-extern "C" fn paramDeleteAllKeys(paramHandle: OfxParamHandle) -> OfxStatus {
+extern "C" fn paramDeleteAllKeys(
+    paramHandle: openfx_rs::types::OfxParamHandle,
+) -> OfxStatus {
     ofxstatus::OK.into()
 }
 
 #[allow(unused_variables)]
 extern "C" fn paramCopy(
-    paramTo: OfxParamHandle,
-    paramFrom: OfxParamHandle,
+    paramTo: openfx_rs::types::OfxParamHandle,
+    paramFrom: openfx_rs::types::OfxParamHandle,
     dstOffset: OfxTime,
     frameRange: *const OfxRangeD,
 ) -> OfxStatus {
@@ -786,44 +816,55 @@ extern "C" fn paramCopy(
 
 #[allow(unused_variables)]
 extern "C" fn paramEditBegin(
-    paramSet: OfxParamSetHandle,
+    paramSet: openfx_rs::types::OfxParamSetHandle,
     name: *const c_char,
 ) -> OfxStatus {
     ofxstatus::OK.into()
 }
 
 #[allow(unused_variables)]
-extern "C" fn paramEditEnd(paramSet: OfxParamSetHandle) -> OfxStatus {
+extern "C" fn paramEditEnd(paramSet: openfx_rs::types::OfxParamSetHandle) -> OfxStatus {
     ofxstatus::OK.into()
 }
 
 pub const PARAMETER_SUITE: OfxParameterSuiteV1 = OfxParameterSuiteV1 {
-    paramDefine,
-    paramGetHandle,
-    paramSetGetPropertySet,
-    paramGetPropertySet,
-    paramGetValue,
-    paramGetValueAtTime,
-    paramGetDerivative,
-    paramGetIntegral,
-    paramSetValue,
-    paramSetValueAtTime,
-    paramGetNumKeys,
-    paramGetKeyTime,
-    paramGetKeyIndex,
-    paramDeleteKey,
-    paramDeleteAllKeys,
-    paramCopy,
-    paramEditBegin,
-    paramEditEnd,
+    paramDefine: Some(paramDefine),
+    paramGetHandle: Some(paramGetHandle),
+    paramSetGetPropertySet: Some(paramSetGetPropertySet),
+    paramGetPropertySet: Some(paramGetPropertySet),
+    paramGetValue: Some(paramGetValue),
+    paramGetValueAtTime: Some(paramGetValueAtTime),
+    paramGetDerivative: None,
+    paramGetIntegral: None,
+    paramSetValue: Some(paramSetValue),
+    paramSetValueAtTime: Some(paramSetValueAtTime),
+    paramGetNumKeys: Some(paramGetNumKeys),
+    paramGetKeyTime: Some(paramGetKeyTime),
+    paramGetKeyIndex: Some(paramGetKeyIndex),
+    paramDeleteKey: Some(paramDeleteKey),
+    paramDeleteAllKeys: Some(paramDeleteAllKeys),
+    paramCopy: Some(paramCopy),
+    paramEditBegin: Some(paramEditBegin),
+    paramEditEnd: Some(paramEditEnd),
 };
 
 // ========= MessageSuiteV1 =========
-extern "C" fn message(
+unsafe extern "C" {
+    unsafe fn message(
+        handle: *mut c_void,
+        messageType: *const c_char,
+        messageId: *const c_char,
+        format: *const c_char,
+        ...
+    ) -> OfxStatus;
+}
+
+#[no_mangle]
+extern "C" fn message_impl(
     handle: *mut c_void,
     messageType: *const c_char,
     messageId: *const c_char,
-    format: *const c_char,
+    message: *const c_char,
 ) -> OfxStatus {
     let id_str = if messageId.is_null() {
         OfxStr::from_str("(null)\0")
@@ -835,7 +876,7 @@ extern "C" fn message(
         serde_json::to_string(&HashMap::from([
             ("message_type", OfxStr::from_ptr(messageType).as_str(),),
             ("message_id", id_str.as_str()),
-            ("format", OfxStr::from_ptr(format).as_str())
+            ("message", OfxStr::from_ptr(message).as_str())
         ]))
         .unwrap()
     );
@@ -855,7 +896,9 @@ extern "C" fn message(
         .into()
 }
 
-pub const MESSAGE_SUITE: OfxMessageSuiteV1 = OfxMessageSuiteV1 { message };
+pub const MESSAGE_SUITE: OfxMessageSuiteV1 = OfxMessageSuiteV1 {
+    message: Some(message),
+};
 
 // ========= Memory suite =========
 #[allow(unused_variables)]
@@ -873,15 +916,15 @@ extern "C" fn memoryFree(allocatedData: *mut c_void) -> OfxStatus {
 }
 
 pub const MEMORY_SUITE: OfxMemorySuiteV1 = OfxMemorySuiteV1 {
-    memoryAlloc,
-    memoryFree,
+    memoryAlloc: Some(memoryAlloc),
+    memoryFree: Some(memoryFree),
 };
 
 // ========= Multithread suite =========
 
 #[allow(unused_variables)]
 extern "C" fn multiThread(
-    func: OfxThreadFunctionV1,
+    func: openfx_sys::OfxThreadFunctionV1,
     nThreads: c_uint,
     customArg: *mut c_void,
 ) -> OfxStatus {
@@ -889,12 +932,12 @@ extern "C" fn multiThread(
 }
 
 #[allow(unused_variables)]
-extern "C" fn multiThreadNumCPUs(nCPUs: *mut c_int) -> OfxStatus {
+extern "C" fn multiThreadNumCPUs(nCPUs: *mut u32) -> OfxStatus {
     panic!("Not implemented!")
 }
 
 #[allow(unused_variables)]
-extern "C" fn multiThreadIndex(threadIndex: *mut c_int) -> OfxStatus {
+extern "C" fn multiThreadIndex(threadIndex: *mut u32) -> OfxStatus {
     panic!("Not implemented!")
 }
 
@@ -904,38 +947,41 @@ extern "C" fn multiThreadIsSpawnedThread() -> c_int {
 }
 
 #[allow(unused_variables)]
-extern "C" fn mutexCreate(mutex: OfxMutexHandle, lockCount: c_int) -> OfxStatus {
+extern "C" fn mutexCreate(
+    mutex: *mut openfx_sys::OfxMutexHandle,
+    lockCount: c_int,
+) -> OfxStatus {
     panic!("Not implemented!")
 }
 
 #[allow(unused_variables)]
-extern "C" fn mutexDestroy(mutex: OfxMutexHandle) -> OfxStatus {
+extern "C" fn mutexDestroy(mutex: openfx_sys::OfxMutexHandle) -> OfxStatus {
     panic!("Not implemented!")
 }
 
 #[allow(unused_variables)]
-extern "C" fn mutexLock(mutex: OfxMutexHandle) -> OfxStatus {
+extern "C" fn mutexLock(mutex: openfx_sys::OfxMutexHandle) -> OfxStatus {
     panic!("Not implemented!")
 }
 
 #[allow(unused_variables)]
-extern "C" fn mutexUnLock(mutex: OfxMutexHandle) -> OfxStatus {
+extern "C" fn mutexUnLock(mutex: openfx_sys::OfxMutexHandle) -> OfxStatus {
     panic!("Not implemented!")
 }
 
 #[allow(unused_variables)]
-extern "C" fn mutexTryLock(mutex: OfxMutexHandle) -> OfxStatus {
+extern "C" fn mutexTryLock(mutex: openfx_sys::OfxMutexHandle) -> OfxStatus {
     panic!("Not implemented!")
 }
 
 pub const MULTI_THREAD_SUITE: OfxMultiThreadSuiteV1 = OfxMultiThreadSuiteV1 {
-    multiThread,
-    multiThreadNumCPUs,
-    multiThreadIndex,
-    multiThreadIsSpawnedThread,
-    mutexCreate,
-    mutexDestroy,
-    mutexLock,
-    mutexUnLock,
-    mutexTryLock,
+    multiThread: Some(multiThread),
+    multiThreadNumCPUs: Some(multiThreadNumCPUs),
+    multiThreadIndex: Some(multiThreadIndex),
+    multiThreadIsSpawnedThread: Some(multiThreadIsSpawnedThread),
+    mutexCreate: Some(mutexCreate),
+    mutexDestroy: Some(mutexDestroy),
+    mutexLock: Some(mutexLock),
+    mutexUnLock: Some(mutexUnLock),
+    mutexTryLock: Some(mutexTryLock),
 };

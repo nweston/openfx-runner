@@ -1,5 +1,9 @@
+/* C implementations of variadic suite functions. These call back into
+   non-variadic rust functions. */
 #include <assert.h>
 #include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 int param_value_count(void *);
@@ -13,6 +17,8 @@ void param_set_value_integer(void *handle, int value);
 void param_set_value_choice(void *handle, int value);
 void param_set_value_double(void *handle, double value);
 void param_set_value_string(void *handle, const char *value);
+int message_impl(void *handle, const char *messageType, const char *messageId,
+                 const char *message);
 
 int paramGetValue (void *paramHandle, ...) {
   int count = param_value_count(paramHandle);
@@ -108,4 +114,33 @@ int paramSetValueAtTime(void *paramHandle, double time, ...) {
   }
 
   return 0;
+}
+
+int message(void *handle, const char *messageType, const char *messageId,
+            const char *format, ...) {
+  va_list ap;
+
+  /* Determine required size */
+
+  va_start(ap, format);
+  int size = vsnprintf(NULL, 0, format, ap);
+  va_end(ap);
+
+  char *p = NULL;
+  if (size > 0) {
+    size++;             /* For '\0' */
+    p = malloc(size);
+
+    if (p) {
+      va_start(ap, format);
+      vsnprintf(p, size, format, ap);
+      va_end(ap);
+    }
+  }
+
+  int stat = message_impl(handle, messageType, messageId, p);
+
+  free(p);
+
+  return stat;
 }
