@@ -1,12 +1,12 @@
 #![allow(non_snake_case)]
-use crate::types::*;
-use crate::{
-    FromProperty, OfxError, ParamValue, PropertySet, PropertyValue, ToHandle, WithObject,
-};
+use crate::handles::*;
+use crate::handles::{ToHandle, WithObject};
+use crate::{FromProperty, OfxError, ParamValue, PropertySet, PropertyValue};
 use libc::{free, posix_memalign};
 use openfx_rs::constants;
 use openfx_rs::constants::ofxstatus;
 use openfx_rs::strings::OfxStr;
+use openfx_rs::types::*;
 // Import directly from openfx_sys. openfx_rs provides wrappers which
 // are convenient for a plugin, but not useful for supplying our own
 // suite implementations

@@ -1,5 +1,5 @@
-use crate::types::{OfxRectD, OfxRectI};
 use crate::{FrameNumber, ParamValue};
+use openfx_rs::types::{OfxRectD, OfxRectI};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::ffi::c_int;
