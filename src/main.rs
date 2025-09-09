@@ -180,7 +180,7 @@ trait ToHandle: Clone {
 /// Handle, WithObject, ToHandle. Provides convenient conversion
 /// between handles and corresponding objects.
 macro_rules! impl_handle {
-    ($handle_name: ident, $object_name: ident) => {
+    ($handle_name: ident, $ofx_handle_name: ident, $object_name: ident) => {
         impl Handle for $handle_name {
             type Object = $object_name;
             fn handle_manager() -> &'static Lazy<Mutex<HandleManager<Self::Object, Self>>>
@@ -206,7 +206,7 @@ macro_rules! impl_handle {
 
         // Convert openfx_rs handle to our wrapper, and call
         // with_object on that
-        impl WithObject<$object_name> for openfx_rs::types::$handle_name {
+        impl WithObject<$object_name> for openfx_rs::types::$ofx_handle_name {
             fn with_object<F, T>(self, callback: F) -> T
             where
                 F: FnOnce(&mut $object_name) -> T,
@@ -216,11 +216,11 @@ macro_rules! impl_handle {
         }
     };
 }
-impl_handle!(OfxImageEffectHandle, ImageEffect);
-impl_handle!(OfxParamSetHandle, ParamSet);
-impl_handle!(OfxPropertySetHandle, PropertySet);
-impl_handle!(OfxImageClipHandle, Clip);
-impl_handle!(OfxParamHandle, Param);
+impl_handle!(ImageEffectHandle, OfxImageEffectHandle, ImageEffect);
+impl_handle!(ParamSetHandle, OfxParamSetHandle, ParamSet);
+impl_handle!(PropertySetHandle, OfxPropertySetHandle, PropertySet);
+impl_handle!(ImageClipHandle, OfxImageClipHandle, Clip);
+impl_handle!(ParamHandle, OfxParamHandle, Param);
 
 type GenericResult = Result<(), Box<dyn Error>>;
 
@@ -509,7 +509,7 @@ struct ParamSet {
 }
 
 impl ParamSet {
-    fn create_param(&mut self, kind: OfxStr, name: OfxStr) -> OfxPropertySetHandle {
+    fn create_param(&mut self, kind: OfxStr, name: OfxStr) -> PropertySetHandle {
         let props = PropertySet::new(
             &("param_".to_string() + name.as_str()),
             [
@@ -819,9 +819,9 @@ impl Plugin {
     fn call_action(
         &self,
         action: OfxStr,
-        handle: OfxImageEffectHandle,
-        in_args: OfxPropertySetHandle,
-        out_args: OfxPropertySetHandle,
+        handle: ImageEffectHandle,
+        in_args: PropertySetHandle,
+        out_args: PropertySetHandle,
     ) -> OfxStatus {
         let handle_ptr: *mut c_void = handle.into();
         unsafe {
@@ -837,9 +837,9 @@ impl Plugin {
     fn try_call_action(
         &self,
         action: OfxStr,
-        handle: OfxImageEffectHandle,
-        in_args: OfxPropertySetHandle,
-        out_args: OfxPropertySetHandle,
+        handle: ImageEffectHandle,
+        in_args: PropertySetHandle,
+        out_args: PropertySetHandle,
     ) -> Result<(), GenericError> {
         let stat = self.call_action(action, handle, in_args, out_args);
         if stat.succeeded() {
@@ -1530,17 +1530,17 @@ fn create_plugin(
     unsafe { (plugin.set_host)((context.host as *const _) as *mut _) };
     plugin.try_call_action(
         constants::ActionLoad,
-        OfxImageEffectHandle::from(std::ptr::null_mut()),
-        OfxPropertySetHandle::from(std::ptr::null_mut()),
-        OfxPropertySetHandle::from(std::ptr::null_mut()),
+        ImageEffectHandle::from(std::ptr::null_mut()),
+        PropertySetHandle::from(std::ptr::null_mut()),
+        PropertySetHandle::from(std::ptr::null_mut()),
     )?;
 
     let descriptor = ImageEffect::new(plugin_name);
     plugin.try_call_action(
         constants::ActionDescribe,
         descriptor.clone().into(),
-        OfxPropertySetHandle::from(std::ptr::null_mut()),
-        OfxPropertySetHandle::from(std::ptr::null_mut()),
+        PropertySetHandle::from(std::ptr::null_mut()),
+        PropertySetHandle::from(std::ptr::null_mut()),
     )?;
 
     context.plugins.insert(
@@ -1605,8 +1605,8 @@ fn create_filter(
         plugin.plugin.try_call_action(
             constants::ImageEffectActionDescribeInContext,
             filter.clone().into(),
-            OfxPropertySetHandle::from(filter_inargs.clone()),
-            OfxPropertySetHandle::from(std::ptr::null_mut()),
+            PropertySetHandle::from(filter_inargs.clone()),
+            PropertySetHandle::from(std::ptr::null_mut()),
         )?;
 
         // Instance of the filter. Both instances and descriptors are
@@ -1618,8 +1618,8 @@ fn create_filter(
         plugin.plugin.try_call_action(
             constants::ActionCreateInstance,
             filter_instance.clone().into(),
-            OfxPropertySetHandle::from(std::ptr::null_mut()),
-            OfxPropertySetHandle::from(std::ptr::null_mut()),
+            PropertySetHandle::from(std::ptr::null_mut()),
+            PropertySetHandle::from(std::ptr::null_mut()),
         )?;
         filter_instance
     };
@@ -1744,8 +1744,8 @@ fn render_filter(
             plugin.plugin.try_call_action(
                 constants::ImageEffectActionRender,
                 instance.effect.clone().into(),
-                OfxPropertySetHandle::from(render_inargs.clone()),
-                OfxPropertySetHandle::from(std::ptr::null_mut()),
+                PropertySetHandle::from(render_inargs.clone()),
+                PropertySetHandle::from(std::ptr::null_mut()),
             )?;
         }
         Ok(())
@@ -1871,8 +1871,8 @@ fn get_rois_for_instance(
     plugin.plugin.try_call_action(
         constants::ImageEffectActionGetRegionsOfInterest,
         instance.effect.clone().into(),
-        OfxPropertySetHandle::from(inargs.clone()),
-        OfxPropertySetHandle::from(outargs.clone()),
+        PropertySetHandle::from(inargs.clone()),
+        PropertySetHandle::from(outargs.clone()),
     )?;
 
     let out = outargs.lock();
@@ -1962,8 +1962,8 @@ fn get_rod_for_instance(
     plugin.plugin.try_call_action(
         constants::ImageEffectActionGetRegionOfDefinition,
         instance.effect.clone().into(),
-        OfxPropertySetHandle::from(inargs.clone()),
-        OfxPropertySetHandle::from(outargs.clone()),
+        PropertySetHandle::from(inargs.clone()),
+        PropertySetHandle::from(outargs.clone()),
     )?;
 
     let out = outargs.lock();
@@ -1994,7 +1994,7 @@ fn set_params(
             constants::ActionBeginInstanceChanged,
             instance.effect.clone().into(),
             inargs1.clone().into(),
-            OfxPropertySetHandle::from(std::ptr::null_mut()),
+            PropertySetHandle::from(std::ptr::null_mut()),
         )?;
     }
 
@@ -2025,7 +2025,7 @@ fn set_params(
                 constants::ActionInstanceChanged,
                 instance.effect.clone().into(),
                 inargs2.clone().into(),
-                OfxPropertySetHandle::from(std::ptr::null_mut()),
+                PropertySetHandle::from(std::ptr::null_mut()),
             )?;
         }
     }
@@ -2035,7 +2035,7 @@ fn set_params(
             constants::ActionEndInstanceChanged,
             instance.effect.clone().into(),
             inargs1.clone().into(),
-            OfxPropertySetHandle::from(std::ptr::null_mut()),
+            PropertySetHandle::from(std::ptr::null_mut()),
         )?;
     }
 
@@ -2053,8 +2053,8 @@ fn describe(
     plugin.plugin.try_call_action(
         constants::ActionDescribe,
         plugin.descriptor.clone().into(),
-        OfxPropertySetHandle::from(std::ptr::null_mut()),
-        OfxPropertySetHandle::from(std::ptr::null_mut()),
+        PropertySetHandle::from(std::ptr::null_mut()),
+        PropertySetHandle::from(std::ptr::null_mut()),
     )?;
 
     Ok(plugin.descriptor.lock().clone())
@@ -2095,8 +2095,8 @@ fn describe_filter(
     plugin.plugin.try_call_action(
         constants::ImageEffectActionDescribeInContext,
         filter.clone().into(),
-        OfxPropertySetHandle::from(filter_inargs.clone()),
-        OfxPropertySetHandle::from(std::ptr::null_mut()),
+        PropertySetHandle::from(filter_inargs.clone()),
+        PropertySetHandle::from(std::ptr::null_mut()),
     )?;
 
     println!("{}", serde_json::to_string(&*filter.lock())?);
@@ -2189,8 +2189,8 @@ fn process_command(command: &Command, context: &mut CommandContext) -> GenericRe
             plugin.plugin.try_call_action(
                 constants::ActionDestroyInstance,
                 instance.effect.clone().into(),
-                OfxPropertySetHandle::from(std::ptr::null_mut()),
-                OfxPropertySetHandle::from(std::ptr::null_mut()),
+                PropertySetHandle::from(std::ptr::null_mut()),
+                PropertySetHandle::from(std::ptr::null_mut()),
             )?;
             context.instances.remove(instance_name);
             Ok(())
@@ -2199,9 +2199,9 @@ fn process_command(command: &Command, context: &mut CommandContext) -> GenericRe
             let plugin = context.get_plugin(plugin_name)?;
             plugin.plugin.try_call_action(
                 constants::ActionUnload,
-                OfxImageEffectHandle::from(std::ptr::null_mut()),
-                OfxPropertySetHandle::from(std::ptr::null_mut()),
-                OfxPropertySetHandle::from(std::ptr::null_mut()),
+                ImageEffectHandle::from(std::ptr::null_mut()),
+                PropertySetHandle::from(std::ptr::null_mut()),
+                PropertySetHandle::from(std::ptr::null_mut()),
             )?;
             context.plugins.remove(plugin_name);
             Ok(())

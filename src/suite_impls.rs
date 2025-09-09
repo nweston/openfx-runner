@@ -884,7 +884,7 @@ extern "C" fn message_impl(
     // TODO: we're assuming handle is a valid effect instance
     // handle. The spec also allows it to be an effect descriptor
     // handle, or null.
-    OfxImageEffectHandle::from(handle)
+    ImageEffectHandle::from(handle)
         .with_object(|effect| {
             // Consume a configured response from the effect instance, or
             // if there are no responses return OK

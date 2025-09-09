@@ -9,10 +9,10 @@ use std::ffi::c_void;
 //
 // This allows us to implement pointer conversions, Hash, and Sync.
 macro_rules! handle {
-    ($name: ident) => {
+    ($name: ident, $ofxname: ident) => {
         #[repr(C)]
         #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-        pub struct $name(openfx_rs::types::$name);
+        pub struct $name(openfx_rs::types::$ofxname);
         impl From<$name> for *mut c_void {
             fn from(handle: $name) -> Self {
                 handle.0 .0 as _
@@ -20,15 +20,15 @@ macro_rules! handle {
         }
         impl From<*mut c_void> for $name {
             fn from(ptr: *mut c_void) -> Self {
-                Self(openfx_rs::types::$name(ptr as _))
+                Self(openfx_rs::types::$ofxname(ptr as _))
             }
         }
-        impl From<openfx_rs::types::$name> for $name {
-            fn from(h: openfx_rs::types::$name) -> Self {
+        impl From<openfx_rs::types::$ofxname> for $name {
+            fn from(h: openfx_rs::types::$ofxname) -> Self {
                 Self(h)
             }
         }
-        impl From<$name> for openfx_rs::types::$name {
+        impl From<$name> for openfx_rs::types::$ofxname {
             fn from(handle: $name) -> Self {
                 handle.0
             }
@@ -46,10 +46,9 @@ macro_rules! handle {
     };
 }
 
-handle!(OfxImageClipHandle);
-handle!(OfxImageEffectHandle);
-handle!(OfxImageMemoryHandle);
-handle!(OfxMutexHandle);
-handle!(OfxParamHandle);
-handle!(OfxParamSetHandle);
-handle!(OfxPropertySetHandle);
+handle!(ImageClipHandle, OfxImageClipHandle);
+handle!(ImageEffectHandle, OfxImageEffectHandle);
+handle!(ImageMemoryHandle, OfxImageMemoryHandle);
+handle!(ParamHandle, OfxParamHandle);
+handle!(ParamSetHandle, OfxParamSetHandle);
+handle!(PropertySetHandle, OfxPropertySetHandle);
