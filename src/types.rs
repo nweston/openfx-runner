@@ -1,7 +1,9 @@
 // Types defined by the OFX API
 #![allow(non_snake_case)]
-pub use openfx_rs::types::{OfxRangeD, OfxRectD, OfxRectI, OfxStatus, OfxTime};
-use std::ffi::{c_char, c_int, c_uint, c_void};
+pub use openfx_rs::types::{
+    OfxHost, OfxPlugin, OfxRangeD, OfxRectD, OfxRectI, OfxStatus, OfxTime,
+};
+use std::ffi::c_void;
 
 // Define our own handle types which wrap the openfx_rs versions.
 //
@@ -51,26 +53,3 @@ handle!(OfxMutexHandle);
 handle!(OfxParamHandle);
 handle!(OfxParamSetHandle);
 handle!(OfxPropertySetHandle);
-
-#[repr(C)]
-pub struct OfxHost {
-    pub host: OfxPropertySetHandle,
-    pub fetchSuite:
-        extern "C" fn(OfxPropertySetHandle, *const c_char, c_int) -> *const c_void,
-}
-
-#[repr(C)]
-pub struct OfxPlugin {
-    pub pluginApi: *const c_char,
-    pub apiVersion: c_int,
-    pub pluginIdentifier: *const c_char,
-    pub pluginVersionMajor: c_uint,
-    pub pluginVersionMinor: c_uint,
-    pub setHost: extern "C" fn(*const OfxHost),
-    pub mainEntry: extern "C" fn(
-        *const c_char,
-        *const c_void,
-        OfxPropertySetHandle,
-        OfxPropertySetHandle,
-    ) -> OfxStatus,
-}

@@ -806,12 +806,12 @@ struct Plugin {
     plugin_identifier: String,
     plugin_version_major: u32,
     plugin_version_minor: u32,
-    set_host: extern "C" fn(*const OfxHost),
-    main_entry: extern "C" fn(
+    set_host: unsafe extern "C" fn(*mut OfxHost),
+    main_entry: unsafe extern "C" fn(
         *const c_char,
         *const c_void,
-        OfxPropertySetHandle,
-        OfxPropertySetHandle,
+        openfx_rs::types::OfxPropertySetHandle,
+        openfx_rs::types::OfxPropertySetHandle,
     ) -> openfx_sys::OfxStatus,
 }
 
@@ -824,7 +824,14 @@ impl Plugin {
         out_args: OfxPropertySetHandle,
     ) -> OfxStatus {
         let handle_ptr: *mut c_void = handle.into();
-        (self.main_entry)(action.as_ptr(), handle_ptr, in_args, out_args)
+        unsafe {
+            (self.main_entry)(
+                action.as_ptr(),
+                handle_ptr,
+                in_args.into(),
+                out_args.into(),
+            )
+        }
     }
 
     fn try_call_action(
@@ -1229,7 +1236,7 @@ impl Bundle {
 }
 
 extern "C" fn fetch_suite(
-    _host: OfxPropertySetHandle,
+    _host: openfx_rs::types::OfxPropertySetHandle,
     name: *const c_char,
     version: c_int,
 ) -> *const c_void {
@@ -1294,8 +1301,8 @@ fn get_plugins(lib: &libloading::Library) -> Result<Vec<Plugin>, Box<dyn Error>>
                 plugin_identifier: OfxStr::from_ptr(p.pluginIdentifier).to_string(),
                 plugin_version_major: p.pluginVersionMajor,
                 plugin_version_minor: p.pluginVersionMinor,
-                set_host: p.setHost,
-                main_entry: p.mainEntry,
+                set_host: p.setHost.unwrap(),
+                main_entry: p.mainEntry.0.unwrap(),
             })
         }
     }
@@ -1520,7 +1527,7 @@ fn create_plugin(
         .into_iter()
         .find(|p| p.plugin_identifier == plugin_name)
         .ok_or(format!("Plugin {} not found in bundle", plugin_name))?;
-    (plugin.set_host)(context.host);
+    unsafe { (plugin.set_host)((context.host as *const _) as *mut _) };
     plugin.try_call_action(
         constants::ActionLoad,
         OfxImageEffectHandle::from(std::ptr::null_mut()),
@@ -2390,8 +2397,8 @@ fn main() {
     // still exists.
     #[allow(clippy::redundant_clone)]
     let host = OfxHost {
-        host: host_props.clone().into(),
-        fetchSuite: fetch_suite,
+        host: host_props.clone().to_handle().into(),
+        fetchSuite: Some(fetch_suite),
     };
 
     let mut context = CommandContext {
