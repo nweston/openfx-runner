@@ -16,12 +16,12 @@ macro_rules! handle {
         pub struct $name(openfx_rs::types::$ofxname);
         impl From<$name> for *mut c_void {
             fn from(handle: $name) -> Self {
-                handle.0 .0 as _
+                handle.0.into()
             }
         }
         impl From<*mut c_void> for $name {
             fn from(ptr: *mut c_void) -> Self {
-                Self(openfx_rs::types::$ofxname(ptr as _))
+                Self(ptr.into())
             }
         }
         impl From<openfx_rs::types::$ofxname> for $name {
