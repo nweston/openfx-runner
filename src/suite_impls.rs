@@ -1,6 +1,6 @@
 #![allow(non_snake_case)]
-use crate::handles::*;
 use crate::handles::{ToHandle, WithObject};
+use crate::{handles::*, Clip};
 use crate::{FromProperty, OfxError, ParamValue, PropertySet, PropertyValue};
 
 #[cfg(target_os = "windows")]
@@ -108,9 +108,9 @@ extern "C" fn clipGetImage(
     imageHandle: *mut openfx_rs::types::OfxPropertySetHandle,
 ) -> OfxStatus {
     clip.with_object(|c| {
-        if let Some(ref image) = c.images.image_at_time(time) {
+        if let Some(handle) = c.get_image_handle_at_time(time) {
             unsafe {
-                *imageHandle = image.properties.to_handle().into();
+                *imageHandle = handle.into();
             }
             ofxstatus::OK
         } else {
@@ -122,8 +122,9 @@ extern "C" fn clipGetImage(
 
 #[allow(unused_variables)]
 extern "C" fn clipReleaseImage(
-    _imageHandle: openfx_rs::types::OfxPropertySetHandle,
+    imageHandle: openfx_rs::types::OfxPropertySetHandle,
 ) -> OfxStatus {
+    Clip::release_image_handle(imageHandle.into());
     ofxstatus::OK.into()
 }
 

@@ -472,10 +472,15 @@ impl ClipImages {
 
 #[derive(Debug)]
 pub struct Clip {
+    name: String,
     properties: Object<PropertySet>,
     images: ClipImages,
     region_of_definition: Option<OfxRectD>,
 }
+
+// Images which have been passed to a plugin via clipGetImage, and not
+// yet released
+static CLIP_IMAGES: Mutex<Vec<Object<PropertySet>>> = Mutex::new(Vec::new());
 
 impl Clip {
     fn set_image(&mut self, image: Image) {
@@ -502,12 +507,57 @@ impl Clip {
         });
         self.images = ClipImages::Sequence(images);
     }
+
+    fn get_image_handle_at_time(&self, time: OfxTime) -> Option<PropertySetHandle> {
+        // clipGetImage is supposed to return a unique handle for each
+        // call, which must be released by the plugin. Since our
+        // handles are pointers to the underlying objects, we must
+        // clone the image properties to get a new handle.
+        self.images.image_at_time(time).map(|image| {
+            let props = image.properties.clone();
+            //  Give each clone a unique name for debugging
+            props.lock().name = format!("{} image at {:?}", self.name, time);
+            let handle = props.to_handle();
+            CLIP_IMAGES.lock().unwrap().push(props);
+
+            handle
+        })
+    }
+
+    fn release_image_handle(handle: PropertySetHandle) {
+        // Find the image corresponding to this handle and remove it
+        // from the active list. It's an error to call this with an
+        // image handle which isn't in use.
+        let mut images = CLIP_IMAGES.lock().unwrap();
+        if let Some(i) = images.iter().position(|item| item.to_handle() == handle) {
+            images.remove(i);
+        } else {
+            panic!("Image handle {:?} is not in use", handle);
+        }
+    }
+
+    /// Panic if any image handles are still in use. Don't call this
+    /// when any renders are in progress.
+    fn check_for_unreleased_images() {
+        let images = CLIP_IMAGES.lock().unwrap();
+        if images.is_empty() {
+            return;
+        }
+        panic!(
+            "Some images were not released: {:?}",
+            images
+                .iter()
+                .map(|img| img.lock().name.clone())
+                .collect::<Vec<_>>()
+        );
+    }
 }
 
 impl Clone for Clip {
     fn clone(&self) -> Self {
         // Deep copy the properties
         Self {
+            name: self.name.clone(),
             properties: self.properties.lock().clone().into_object(),
             images: self.images.clone(),
             region_of_definition: self.region_of_definition,
@@ -565,6 +615,7 @@ impl ImageEffect {
         self.clips.insert(
             name.to_string(),
             Clip {
+                name: name.to_string(),
                 properties: PropertySet::new(
                     &format!("clip_{}", name),
                     [
@@ -1600,6 +1651,9 @@ fn render_filter(
             Ok(())
         })?
     }
+
+    // Check after all renders are finished
+    Clip::check_for_unreleased_images();
 
     if let Some(output_directory) = output_directory {
         std::fs::create_dir_all(output_directory)?;
