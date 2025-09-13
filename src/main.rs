@@ -1,6 +1,5 @@
 use clap::{Parser, Subcommand};
 use exr::prelude::{read_first_rgba_layer_from_file, write_rgba_file};
-use once_cell::sync::Lazy;
 use openfx_rs::constants;
 use openfx_rs::constants::ofxstatus;
 use openfx_rs::strings::OfxStr;
@@ -14,7 +13,7 @@ use std::error::Error;
 use std::ffi::{c_char, c_int, c_void, CString};
 use std::fs;
 use std::string::String;
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 use std::thread;
 
 mod commands;

@@ -1,8 +1,7 @@
-use once_cell::sync::Lazy;
 use serde::{Serialize, Serializer};
 use std::collections::HashMap;
 use std::ffi::c_void;
-use std::sync::{Arc, Mutex, MutexGuard, Weak};
+use std::sync::{Arc, LazyLock, Mutex, MutexGuard, Weak};
 
 // ========= Handles =========
 
@@ -143,7 +142,7 @@ where
 /// handle.
 pub trait Handle: Sized + Eq + std::hash::Hash + std::fmt::Debug + 'static {
     type Object;
-    fn handle_manager() -> &'static Lazy<Mutex<HandleManager<Self::Object, Self>>>;
+    fn handle_manager() -> &'static LazyLock<Mutex<HandleManager<Self::Object, Self>>>;
 
     /// Get the underlying object of a handle.
     ///
@@ -208,10 +207,11 @@ macro_rules! impl_handle {
     ($handle_name: ident, $ofx_handle_name: ident, $object_name: ident) => {
         impl Handle for $handle_name {
             type Object = $object_name;
-            fn handle_manager() -> &'static Lazy<Mutex<HandleManager<Self::Object, Self>>>
-            {
-                static MANAGER: Lazy<Mutex<HandleManager<$object_name, $handle_name>>> =
-                    Lazy::new(|| Mutex::new(HandleManager::new()));
+            fn handle_manager(
+            ) -> &'static LazyLock<Mutex<HandleManager<Self::Object, Self>>> {
+                static MANAGER: LazyLock<
+                    Mutex<HandleManager<$object_name, $handle_name>>,
+                > = LazyLock::new(|| Mutex::new(HandleManager::new()));
                 &MANAGER
             }
         }
