@@ -1017,7 +1017,7 @@ impl Bundle {
     fn new(path: std::path::PathBuf) -> Result<Self, Box<dyn Error>> {
         let file = plist_path(&path);
         let plist = plist::Value::from_file(file.clone()).map_err(|e| GenericError {
-            message: format!("Failed reading plist \"{}\"", file.display()),
+            message: format!("Failed reading plist \"{}\" {}", file.display(), e),
             source: e.into(),
         })?;
         Ok(Self { path, plist })
@@ -1306,12 +1306,26 @@ impl<'a> CommandContext<'a> {
     }
 }
 
+fn bundle_path(bundle_name: &str) -> String {
+    #[cfg(target_os = "windows")]
+    return format!(
+        "C:/Program Files/Common Files/OFX/Plugins/{}.ofx.bundle",
+        bundle_name
+    );
+
+    #[cfg(target_os = "linux")]
+    return format!("/usr/OFX/Plugins/{}.ofx.bundle", bundle_name);
+
+    #[cfg(target_os = "macos")]
+    return format!("/Library/OFX/Plugins/{}.ofx.bundle", bundle_name);
+}
+
 fn load_bundle(
     bundle_name: &str,
 ) -> Result<(Bundle, libloading::Library), Box<dyn Error>> {
-    let path = format!("/usr/OFX/Plugins/{}.ofx.bundle", bundle_name);
+    let path = bundle_path(bundle_name);
     let bundle = Bundle::new(path.into()).map_err(|e| GenericError {
-        message: format!("Error loading bundle {}", bundle_name),
+        message: format!("Error loading bundle {} {}", bundle_name, e),
         source: e,
     })?;
     let lib = bundle.load()?;
