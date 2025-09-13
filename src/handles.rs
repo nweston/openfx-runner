@@ -109,11 +109,12 @@ pub trait IntoObject: Sized {
 /// an Object<T>. A handle stores the address of the underlying object
 /// (which won't move because it's boxed by the Object
 /// wrapper). However, to preserve safety, handles are never actually
-/// dereferenced. Instead, the HandleManager maintains of map of
+/// dereferenced. Instead, the HandleManager maintains a map of
 /// handles, and Weak pointers to the underlying object. This has
-/// several benefits: - Avoids unsafe code - Invalid handles are
-/// detected because they don't exist in the map - Handles to dead
-/// objects are detected by the Weak pointer
+/// several benefits:
+/// - Avoids unsafe code
+/// - Invalid handles are detected because they don't exist in the map
+/// - Handles to dead objects are detected by the Weak pointer
 pub struct HandleManager<T, H> {
     handle_to_ptr: HashMap<H, Weak<Mutex<T>>>,
 }
