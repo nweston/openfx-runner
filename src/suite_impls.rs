@@ -2,7 +2,12 @@
 use crate::handles::*;
 use crate::handles::{ToHandle, WithObject};
 use crate::{FromProperty, OfxError, ParamValue, PropertySet, PropertyValue};
+
+#[cfg(target_os = "windows")]
+use libc::{free, malloc};
+#[cfg(not(target_os = "windows"))]
 use libc::{free, posix_memalign};
+
 use openfx_rs::constants;
 use openfx_rs::constants::ofxstatus;
 use openfx_rs::strings::OfxStr;
@@ -155,12 +160,26 @@ extern "C" fn imageMemoryAlloc(
     unsafe {
         // Allocate memory directly and return the pointer as a
         // handle.
-        let mut ptr: *mut c_void = std::ptr::null_mut();
-        // 16-byte alignment is required by the spec
-        if posix_memalign(&mut ptr, 16, nBytes) != 0 {
-            return ofxstatus::ErrMemory.into();
+
+        // 16-byte alignment is required by the spec, but Windows
+        // doesn't have posix_memalign so use regular malloc for now
+        #[cfg(target_os = "windows")]
+        {
+            let ptr: *mut c_void = malloc(nBytes);
+            if ptr.is_null() {
+                return OfxStatus::ErrMemory;
+            }
+            *memoryHandle = ptr.into();
         }
-        *memoryHandle = openfx_rs::types::OfxImageMemoryHandle(ptr as _);
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            let mut ptr: *mut c_void = std::ptr::null_mut();
+            if posix_memalign(&mut ptr, 16, nBytes) != 0 {
+                return ofxstatus::ErrMemory.into();
+            }
+            *memoryHandle = openfx_rs::types::OfxImageMemoryHandle(ptr as _);
+        }
     };
     ofxstatus::OK.into()
 }
