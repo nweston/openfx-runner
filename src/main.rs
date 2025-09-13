@@ -463,7 +463,7 @@ impl ClipImages {
 
     fn image_at_frame(&self, frame: FrameNumber) -> Option<&Image> {
         match self {
-            ClipImages::Static(ref image) => Some(image),
+            ClipImages::Static(image) => Some(image),
             ClipImages::Sequence(m) => m.get(&frame),
             ClipImages::NoImage => None,
         }

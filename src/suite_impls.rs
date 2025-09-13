@@ -602,7 +602,7 @@ extern "C" fn paramGetPropertySet(
     ofxstatus::OK.into()
 }
 
-extern "C" {
+unsafe extern "C" {
     fn paramGetValue(paramHandle: openfx_rs::types::OfxParamHandle, ...) -> OfxStatus;
     fn paramGetValueAtTime(
         paramHandle: openfx_rs::types::OfxParamHandle,
@@ -617,7 +617,7 @@ extern "C" {
     ) -> OfxStatus;
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn param_value_count(
     paramHandle: openfx_rs::types::OfxParamHandle,
 ) -> c_int {
@@ -631,7 +631,7 @@ pub extern "C" fn param_value_count(
     })
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn param_get_value_1(
     paramHandle: openfx_rs::types::OfxParamHandle,
     value: *mut c_void,
@@ -650,7 +650,7 @@ pub extern "C" fn param_get_value_1(
     ofxstatus::OK.into()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[allow(unused_variables)]
 pub extern "C" fn param_get_value_2(
     paramHandle: openfx_rs::types::OfxParamHandle,
@@ -672,7 +672,7 @@ pub extern "C" fn param_get_value_2(
     ofxstatus::OK.into()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn param_get_value_3(
     paramHandle: openfx_rs::types::OfxParamHandle,
     value1: *mut c_void,
@@ -701,7 +701,7 @@ pub extern "C" fn param_get_value_3(
     ofxstatus::OK.into()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn param_get_value_4(
     paramHandle: openfx_rs::types::OfxParamHandle,
     value1: *mut c_void,
@@ -722,7 +722,7 @@ pub extern "C" fn param_get_value_4(
     ofxstatus::OK.into()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn param_get_type(
     handle: openfx_rs::types::OfxParamHandle,
 ) -> *const c_char {
@@ -737,7 +737,7 @@ pub extern "C" fn param_get_type(
     })
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn param_set_value_boolean(
     handle: openfx_rs::types::OfxParamHandle,
     value: i32,
@@ -745,7 +745,7 @@ pub extern "C" fn param_set_value_boolean(
     handle.with_object(|p| p.value = ParamValue::Boolean(value != 0));
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn param_set_value_integer(
     handle: openfx_rs::types::OfxParamHandle,
     value: i32,
@@ -753,7 +753,7 @@ pub extern "C" fn param_set_value_integer(
     handle.with_object(|p| p.value = ParamValue::Integer(value));
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn param_set_value_choice(
     handle: openfx_rs::types::OfxParamHandle,
     value: i32,
@@ -761,7 +761,7 @@ pub extern "C" fn param_set_value_choice(
     handle.with_object(|p| p.value = ParamValue::Choice(value as usize));
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn param_set_value_double(
     handle: openfx_rs::types::OfxParamHandle,
     value: f64,
@@ -769,7 +769,7 @@ pub extern "C" fn param_set_value_double(
     handle.with_object(|p| p.value = ParamValue::Double(value));
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn param_set_value_string(
     handle: openfx_rs::types::OfxParamHandle,
     value: *const c_char,
@@ -878,7 +878,7 @@ unsafe extern "C" {
     ) -> OfxStatus;
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 extern "C" fn message_impl(
     handle: *mut c_void,
     messageType: *const c_char,
