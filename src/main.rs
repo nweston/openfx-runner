@@ -1,3 +1,4 @@
+use anyhow::{anyhow, bail, Context, Result};
 use clap::{Parser, Subcommand};
 use exr::prelude::{read_first_rgba_layer_from_file, write_rgba_file};
 use openfx_rs::constants;
@@ -33,34 +34,7 @@ impl_handle!(PropertySetHandle, OfxPropertySetHandle, PropertySet);
 impl_handle!(ImageClipHandle, OfxImageClipHandle, Clip);
 impl_handle!(ParamHandle, OfxParamHandle, Param);
 
-type GenericResult = Result<(), Box<dyn Error>>;
-
-#[derive(Debug)]
-struct GenericError {
-    message: String,
-    source: Box<dyn Error>,
-}
-
-impl std::fmt::Display for GenericError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.message)
-    }
-}
-
-impl Error for GenericError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        Some(&*self.source)
-    }
-}
-
-impl From<&str> for GenericError {
-    fn from(s: &str) -> Self {
-        Self {
-            message: s.into(),
-            source: s.into(),
-        }
-    }
-}
+type GenericResult = Result<()>;
 
 #[derive(Debug)]
 /// The result of an OFX API call.
@@ -702,12 +676,12 @@ impl Plugin {
         handle: ImageEffectHandle,
         in_args: PropertySetHandle,
         out_args: PropertySetHandle,
-    ) -> Result<(), GenericError> {
+    ) -> GenericResult {
         let stat = self.call_action(action, handle, in_args, out_args);
         if stat.succeeded() {
             Ok(())
         } else {
-            Err(format!("{} failed: {:?}", action, stat).as_str().into())
+            bail!("{} failed: {:?}", action, stat);
         }
     }
 }
@@ -1064,23 +1038,21 @@ struct Bundle {
 }
 
 impl Bundle {
-    fn new(path: std::path::PathBuf) -> Result<Self, Box<dyn Error>> {
+    fn new(path: std::path::PathBuf) -> Result<Self> {
         let file = plist_path(&path);
-        let plist = plist::Value::from_file(file.clone()).map_err(|e| GenericError {
-            message: format!("Failed reading plist \"{}\" {}", file.display(), e),
-            source: e.into(),
-        })?;
+        let plist = plist::Value::from_file(file.clone())
+            .with_context(|| format!("Reading plist \"{}\"", file.display()))?;
         Ok(Self { path, plist })
     }
 
-    fn library_path(&self) -> Result<std::path::PathBuf, &str> {
+    fn library_path(&self) -> Result<std::path::PathBuf> {
         self.plist
             .as_dictionary()
-            .ok_or("Malformed plist")?
+            .ok_or(anyhow!("Malformed plist"))?
             .get("CFBundleExecutable")
-            .ok_or("CFBundleExecutable not found in plist")?
+            .ok_or(anyhow!("CFBundleExecutable not found in plist"))?
             .as_string()
-            .ok_or("CFBundleExecutable is not a string")
+            .ok_or(anyhow!("CFBundleExecutable is not a string"))
             .map(|lib_name| {
                 if cfg!(target_os = "linux") {
                     self.path.join("Contents/Linux-x86-64").join(lib_name)
@@ -1092,7 +1064,7 @@ impl Bundle {
             })
     }
 
-    fn load(&self) -> Result<libloading::Library, Box<dyn Error>> {
+    fn load(&self) -> Result<libloading::Library> {
         Ok(unsafe { libloading::Library::new(self.library_path()?)? })
     }
 }
@@ -1136,7 +1108,7 @@ extern "C" fn fetch_suite(
     }
 }
 
-fn get_plugins(lib: &libloading::Library) -> Result<Vec<Plugin>, Box<dyn Error>> {
+fn get_plugins(lib: &libloading::Library) -> Result<Vec<Plugin>> {
     let mut plugins = Vec::new();
     unsafe {
         let number_of_plugins: libloading::Symbol<unsafe extern "C" fn() -> i32> =
@@ -1149,12 +1121,11 @@ fn get_plugins(lib: &libloading::Library) -> Result<Vec<Plugin>, Box<dyn Error>>
             let p = &*get_plugin(i);
             let api = OfxStr::from_ptr(p.pluginApi);
             if api != constants::ImageEffectPluginApi {
-                return Err(format!(
+                bail!(
                     "Unknown API '{}' (only '{}' is supported)",
                     api,
                     constants::ImageEffectPluginApi
-                )
-                .into());
+                );
             }
 
             plugins.push(Plugin {
@@ -1263,7 +1234,7 @@ fn create_images(
     );
 }
 
-fn read_exr(name: &str, path: &str, origin: (i32, i32)) -> Result<Image, Box<dyn Error>> {
+fn read_exr(name: &str, path: &str, origin: (i32, i32)) -> Result<Image> {
     let (width, height, pixels) = read_first_rgba_layer_from_file(
         path,
         // Construct pixel storage. We use a tuple which includes
@@ -1343,16 +1314,16 @@ struct CommandContext<'a> {
 }
 
 impl<'a> CommandContext<'a> {
-    fn get_plugin(&self, name: &str) -> Result<&LoadedPlugin, GenericError> {
+    fn get_plugin(&self, name: &str) -> Result<&LoadedPlugin> {
         self.plugins
             .get(name)
-            .ok_or(format!("Plugin {} not loaded", name).as_str().into())
+            .ok_or(anyhow!("Plugin {} not loaded", name))
     }
 
-    fn get_instance(&self, name: &str) -> Result<&Instance, GenericError> {
+    fn get_instance(&self, name: &str) -> Result<&Instance> {
         self.instances
             .get(name)
-            .ok_or(format!("No instance named {}", name).as_str().into())
+            .ok_or(anyhow!("No instance named {}", name))
     }
 }
 
@@ -1370,14 +1341,10 @@ fn bundle_path(bundle_name: &str) -> String {
     return format!("/Library/OFX/Plugins/{}.ofx.bundle", bundle_name);
 }
 
-fn load_bundle(
-    bundle_name: &str,
-) -> Result<(Bundle, libloading::Library), Box<dyn Error>> {
+fn load_bundle(bundle_name: &str) -> Result<(Bundle, libloading::Library)> {
     let path = bundle_path(bundle_name);
-    let bundle = Bundle::new(path.into()).map_err(|e| GenericError {
-        message: format!("Error loading bundle {} {}", bundle_name, e),
-        source: e,
-    })?;
+    let bundle = Bundle::new(path.into())
+        .with_context(|| format!("Loading bundle {}", bundle_name))?;
     let lib = bundle.load()?;
     Ok((bundle, lib))
 }
@@ -1402,7 +1369,7 @@ fn create_plugin(
     let plugin = get_plugins(&lib)?
         .into_iter()
         .find(|p| p.plugin_identifier == plugin_name)
-        .ok_or(format!("Plugin {} not found in bundle", plugin_name))?;
+        .ok_or(anyhow!("Plugin {} not found in bundle", plugin_name))?;
     unsafe { (plugin.set_host)((context.host as *const _) as *mut _) };
     plugin.try_call_action(
         constants::ActionLoad,
@@ -1445,14 +1412,14 @@ fn create_filter(
             .map(|p| p.0.contains(&constants::ImageEffectContextFilter.into()))
             .unwrap_or(false)
         {
-            return Err("Filter context not supported".into());
+            bail!("Filter context not supported");
         }
         if !values
             .get(constants::ImageEffectPropSupportedPixelDepths.as_str())
             .map(|p| p.0.contains(&constants::BitDepthFloat.into()))
             .unwrap_or(false)
         {
-            return Err("OfxBitDepthFloat not supported".into());
+            bail!("OfxBitDepthFloat not supported");
         }
 
         // Descriptor for the plugin in Filter context
@@ -1515,7 +1482,7 @@ fn get_output_rect(
     project_rect: OfxRectD,
     instance: &Instance,
     plugin: &LoadedPlugin,
-) -> Result<OfxRectI, Box<dyn Error>> {
+) -> Result<OfxRectI> {
     Ok(if let Some(l) = layout {
         if let Some(w) = l.render_window {
             w
@@ -1548,7 +1515,7 @@ fn render_filter(
 ) -> GenericResult {
     let (FrameNumber(frame_min), FrameNumber(frame_limit)) = frame_range;
     if frame_limit <= frame_min {
-        return Err(format!("Invalid frame range {frame_min}..{frame_limit}").into());
+        bail!(format!("Invalid frame range {frame_min}..{frame_limit}"));
     }
 
     let input_origin = layout.map(|l| l.input_origin).unwrap_or((0, 0));
@@ -1637,9 +1604,7 @@ fn render_filter(
                 .map(|i| {
                     let min = i * chunk_size;
                     let limit = (min + chunk_size).min(frame_limit);
-                    // If render fails, convert error to a string so
-                    // we can send it across threads
-                    s.spawn(move || render_range(min, limit).map_err(|e| e.to_string()))
+                    s.spawn(move || render_range(min, limit))
                 })
                 .collect::<Vec<_>>();
 
@@ -1684,7 +1649,7 @@ fn get_rois(
     project_extent: (f64, f64),
     region_of_interest: &OfxRectD,
     context: &mut CommandContext,
-) -> Result<OfxRectD, Box<dyn Error>> {
+) -> Result<OfxRectD> {
     let instance = context.get_instance(instance_name)?;
     let plugin = context.get_plugin(&instance.plugin_name)?;
 
@@ -1696,7 +1661,7 @@ fn get_rois_for_instance(
     region_of_interest: &OfxRectD,
     instance: &Instance,
     plugin: &LoadedPlugin,
-) -> Result<OfxRectD, Box<dyn Error>> {
+) -> Result<OfxRectD> {
     let (width, height) = project_extent;
 
     // Set effect properties
@@ -1781,7 +1746,7 @@ fn get_rod(
     project_extent: (f64, f64),
     input_rod: &OfxRectD,
     context: &mut CommandContext,
-) -> Result<OfxRectD, Box<dyn Error>> {
+) -> Result<OfxRectD> {
     let instance = context.get_instance(instance_name)?;
     let plugin = context.get_plugin(&instance.plugin_name)?;
 
@@ -1793,7 +1758,7 @@ fn get_rod_for_instance(
     input_rod: &OfxRectD,
     instance: &Instance,
     plugin: &LoadedPlugin,
-) -> Result<OfxRectD, Box<dyn Error>> {
+) -> Result<OfxRectD> {
     let (width, height) = project_extent;
 
     // Set effect properties
@@ -1882,7 +1847,7 @@ fn set_params(
             .effect
             .lock()
             .get_param(name)
-            .ok_or(format!("No such param: {}", name))?;
+            .ok_or(anyhow!("No such param: {}", name))?;
         param.lock().value = val.clone();
 
         if call_instance_changed {
@@ -1925,7 +1890,7 @@ fn describe(
     bundle_name: &str,
     plugin_name: &str,
     context: &mut CommandContext,
-) -> Result<ImageEffect, Box<dyn Error>> {
+) -> Result<ImageEffect> {
     create_plugin(bundle_name, plugin_name, context)?;
 
     let plugin = context.get_plugin(plugin_name)?;
@@ -2136,18 +2101,10 @@ fn process_command(command: &Command, context: &mut CommandContext) -> GenericRe
     }
 }
 
-fn read_commands(path: &str) -> Result<Vec<Command>, GenericError> {
+fn read_commands(path: &str) -> Result<Vec<Command>> {
     fs::read_to_string(path)
-        .map_err(|e| GenericError {
-            message: format!("Failed reading file {}", path),
-            source: e.into(),
-        })
-        .and_then(|s| {
-            serde_json::from_str(&s).map_err(|e| GenericError {
-                message: "Error parsing JSON".to_string(),
-                source: e.into(),
-            })
-        })
+        .with_context(|| format!("Reading file {}", path))
+        .and_then(|s| serde_json::from_str(&s).with_context(|| "Error parsing JSON"))
 }
 
 #[derive(Parser)]
@@ -2308,14 +2265,14 @@ fn main() {
         // Otherwise read commands from file
         CliCommands::Run { ref command_file } => read_commands(command_file)
             .unwrap_or_else(|e| {
-                eprintln!("{}: {}", e, e.source);
+                eprintln!("{:?}", e);
                 std::process::exit(64);
             }),
     };
 
     for ref c in commands {
         if let Err(e) = process_command(c, &mut context) {
-            eprintln!("Error running command: {}", e);
+            eprintln!("Error running command: {:?}", e);
             std::process::exit(-1);
         }
     }
@@ -2338,7 +2295,7 @@ mod test {
             Bundle::new("test/Empty.ofx.bundle".into())
                 .unwrap_err()
                 .to_string(),
-            "Failed reading plist \"test/Empty.ofx.bundle/Contents/Info.plist\""
+            "Reading plist \"test/Empty.ofx.bundle/Contents/Info.plist\""
         );
     }
 
@@ -2348,7 +2305,7 @@ mod test {
             Bundle::new("test/Unparseable.ofx.bundle".into())
                 .unwrap_err()
                 .to_string(),
-            "Failed reading plist \"test/Unparseable.ofx.bundle/Contents/Info.plist\""
+            "Reading plist \"test/Unparseable.ofx.bundle/Contents/Info.plist\""
         );
     }
 
