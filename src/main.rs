@@ -1991,6 +1991,40 @@ fn set_host_properties(
     });
 }
 
+fn print_params(instance_name: &str, context: &mut CommandContext) -> GenericResult {
+    let instance = context.get_instance(instance_name)?;
+    println!(
+        "{}",
+        serde_json::to_string(&*instance.effect.lock().param_set.lock())?
+    );
+    Ok(())
+}
+
+fn destroy_instance(instance_name: &str, context: &mut CommandContext) -> GenericResult {
+    let instance = context.get_instance(instance_name)?;
+    let plugin = context.get_plugin(&instance.plugin_name)?;
+    plugin.plugin.try_call_action(
+        constants::ActionDestroyInstance,
+        instance.effect.clone().into(),
+        PropertySetHandle::from(std::ptr::null_mut()),
+        PropertySetHandle::from(std::ptr::null_mut()),
+    )?;
+    context.instances.remove(instance_name);
+    Ok(())
+}
+
+fn unload_plugin(plugin_name: &str, context: &mut CommandContext) -> GenericResult {
+    let plugin = context.get_plugin(plugin_name)?;
+    plugin.plugin.try_call_action(
+        constants::ActionUnload,
+        ImageEffectHandle::from(std::ptr::null_mut()),
+        PropertySetHandle::from(std::ptr::null_mut()),
+        PropertySetHandle::from(std::ptr::null_mut()),
+    )?;
+    context.plugins.remove(plugin_name);
+    Ok(())
+}
+
 fn process_command(command: &Command, context: &mut CommandContext) -> GenericResult {
     use commands::Command::*;
 
@@ -1998,11 +2032,11 @@ fn process_command(command: &Command, context: &mut CommandContext) -> GenericRe
         CreatePlugin {
             bundle_name,
             plugin_name,
-        } => create_plugin(bundle_name, plugin_name, context),
+        } => create_plugin(bundle_name, plugin_name, context).context("CreatePlugin"),
         CreateFilter {
             plugin_name,
             instance_name,
-        } => create_filter(plugin_name, instance_name, context),
+        } => create_filter(plugin_name, instance_name, context).context("CreateFilter"),
         RenderFilter {
             instance_name,
             input_file,
@@ -2018,63 +2052,45 @@ fn process_command(command: &Command, context: &mut CommandContext) -> GenericRe
             *frame_range,
             *thread_count,
             context,
-        ),
+        )
+        .context("RenderFilter"),
         PrintParams { instance_name } => {
-            let instance = context.get_instance(instance_name)?;
-            println!(
-                "{}",
-                serde_json::to_string(&*instance.effect.lock().param_set.lock())?
-            );
-            Ok(())
+            print_params(instance_name, context).context("PrintParams")
         }
         DestroyInstance { instance_name } => {
-            let instance = context.get_instance(instance_name)?;
-            let plugin = context.get_plugin(&instance.plugin_name)?;
-            plugin.plugin.try_call_action(
-                constants::ActionDestroyInstance,
-                instance.effect.clone().into(),
-                PropertySetHandle::from(std::ptr::null_mut()),
-                PropertySetHandle::from(std::ptr::null_mut()),
-            )?;
-            context.instances.remove(instance_name);
-            Ok(())
+            destroy_instance(instance_name, context).context("DestroyInstance")
         }
         UnloadPlugin { plugin_name } => {
-            let plugin = context.get_plugin(plugin_name)?;
-            plugin.plugin.try_call_action(
-                constants::ActionUnload,
-                ImageEffectHandle::from(std::ptr::null_mut()),
-                PropertySetHandle::from(std::ptr::null_mut()),
-                PropertySetHandle::from(std::ptr::null_mut()),
-            )?;
-            context.plugins.remove(plugin_name);
-            Ok(())
+            unload_plugin(plugin_name, context).context("UnloadPlugin")
         }
         SetParams {
             instance_name,
             values,
             call_instance_changed,
-        } => set_params(instance_name, values, *call_instance_changed, context),
-        ListPlugins { bundle_name } => list_plugins(bundle_name),
+        } => set_params(instance_name, values, *call_instance_changed, context)
+            .context("SetParams"),
+        ListPlugins { bundle_name } => list_plugins(bundle_name).context("ListPlugins"),
         Describe {
             bundle_name,
             plugin_name,
         } => {
-            let effect = describe(bundle_name, plugin_name, context)?;
+            let effect =
+                describe(bundle_name, plugin_name, context).context("Describe")?;
             println!("{}", serde_json::to_string(&*effect.properties.lock())?);
             Ok(())
         }
         DescribeFilter {
             bundle_name,
             plugin_name,
-        } => describe_filter(bundle_name, plugin_name, context),
+        } => describe_filter(bundle_name, plugin_name, context).context("DescribeFilter"),
         PrintRoIs {
             instance_name,
             region_of_interest,
             project_extent,
         } => {
             let roi =
-                get_rois(instance_name, *project_extent, region_of_interest, context)?;
+                get_rois(instance_name, *project_extent, region_of_interest, context)
+                    .context("PrintRoIs")?;
             println!("{}", serde_json::to_string(&roi)?);
             Ok(())
         }
@@ -2083,17 +2099,16 @@ fn process_command(command: &Command, context: &mut CommandContext) -> GenericRe
             input_rod,
             project_extent,
         } => {
-            let rod = get_rod(instance_name, *project_extent, input_rod, context)?;
+            let rod = get_rod(instance_name, *project_extent, input_rod, context)
+                .context("PrintRoD")?;
             println!("{}", serde_json::to_string(&rod)?);
             Ok(())
         }
         ConfigureMessageSuiteResponses {
             instance_name,
             responses,
-        } => {
-            configure_message_suite_responses(instance_name, responses, context)?;
-            Ok(())
-        }
+        } => configure_message_suite_responses(instance_name, responses, context)
+            .context("ConfigureMessageSuiteResponses"),
         SetHostProperties { props } => {
             set_host_properties(props, context);
             Ok(())
