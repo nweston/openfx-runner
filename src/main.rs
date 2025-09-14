@@ -1260,7 +1260,8 @@ fn read_exr(name: &str, path: &str, origin: (i32, i32)) -> Result<Image> {
                 a: a,
             };
         },
-    )?
+    )
+    .with_context(|| format!("Read EXR \"{}\"", path))?
     .layer_data
     .channel_data
     .pixels; // Get the pixel storage we constructed
