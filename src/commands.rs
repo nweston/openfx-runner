@@ -18,6 +18,7 @@ pub struct RenderLayout {
     pub input_origin: (i32, i32),
     // Optionally specify the render window. If missing, use RoD
     pub render_window: Option<OfxRectI>,
+    pub rowbytes: Option<usize>,
     #[serde(default)]
     pub crop_inputs_to_roi: bool,
 }
@@ -27,6 +28,12 @@ pub enum PropertyValue {
     String(String),
     Double(f64),
     Int(c_int),
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct Input {
+    pub filename: String,
+    pub rowbytes: Option<usize>,
 }
 
 fn default_frame_range() -> (FrameNumber, FrameNumber) {
@@ -51,7 +58,7 @@ pub enum Command {
     /// Render a single frame with a filter instance.
     RenderFilter {
         instance_name: String,
-        input_file: String,
+        input: Input,
         output_directory: Option<String>,
         layout: Option<RenderLayout>,
         #[serde(default = "default_frame_range")]
