@@ -344,11 +344,12 @@ impl Pixel {
 pub struct Image {
     bounds: OfxRectI,
     pixels: Vec<Pixel>,
+    stride: usize,
     properties: Object<PropertySet>,
 }
 
 impl Image {
-    fn new(name: &str, bounds: &OfxRectI, mut pixels: Vec<Pixel>) -> Self {
+    fn new(name: &str, bounds: &OfxRectI, mut pixels: Vec<Pixel>, stride: usize) -> Self {
         let properties = PropertySet::new(
             &format!("{}_image", name),
             [
@@ -375,7 +376,7 @@ impl Image {
                 (constants::ImagePropRegionOfDefinition, bounds.into()),
                 (
                     constants::ImagePropRowBytes,
-                    (bounds.width() * std::mem::size_of::<Pixel>()).into(),
+                    (stride * std::mem::size_of::<Pixel>()).into(),
                 ),
                 (constants::ImagePropField, constants::ImageFieldNone.into()),
             ],
@@ -384,14 +385,16 @@ impl Image {
         Self {
             bounds: *bounds,
             pixels,
+            stride,
             properties,
         }
     }
 
-    fn empty(name: &str, bounds: &OfxRectI) -> Self {
+    fn empty(name: &str, bounds: &OfxRectI, rowbytes: Option<usize>) -> Self {
+        let stride = get_image_stride(bounds.width(), rowbytes);
         let mut pixels = Vec::new();
-        pixels.resize(bounds.width() * bounds.height(), Pixel::zero());
-        Self::new(name, bounds, pixels)
+        pixels.resize(stride * bounds.height(), Pixel::zero());
+        Self::new(name, bounds, pixels, stride)
     }
 
     // Adjust bounds and data pointer so image appears cropped to
@@ -1210,6 +1213,7 @@ fn create_images(
     input: Image,
     project_dims: Property,
     output_rect: &OfxRectI,
+    output_rowbytes: Option<usize>,
     frame_min: u32,
     frame_limit: u32,
 ) {
@@ -1229,30 +1233,58 @@ fn create_images(
         output_rect.width(),
         output_rect.height(),
         (frame_min..frame_limit)
-            .map(|f| (FrameNumber(f), Image::empty("Output", output_rect)))
+            .map(|f| {
+                (
+                    FrameNumber(f),
+                    Image::empty("Output", output_rect, output_rowbytes),
+                )
+            })
             .collect(),
     );
 }
 
-fn read_exr(name: &str, path: &str, origin: (i32, i32)) -> Result<Image> {
+// Number of pixels per row. If rowbytes is provided, try to make
+// pixel count match it, but always return at least the original
+// width.
+fn get_image_stride(width: usize, rowbytes: Option<usize>) -> usize {
+    rowbytes
+        .map(|b| max(b / std::mem::size_of::<Pixel>(), width))
+        .unwrap_or(width)
+}
+
+fn read_exr(
+    name: &str,
+    path: &str,
+    rowbytes: Option<usize>,
+    origin: (i32, i32),
+) -> Result<Image> {
+    // Rowbytes calculation is a bit weird:
+    // read_first_rgba_layer_from_file can't return a separate
+    // rowbytes/stride value, so we have to return the width an
+    // recalculate stride several times.
+
     let (width, height, pixels) = read_first_rgba_layer_from_file(
         path,
         // Construct pixel storage. We use a tuple which includes
         // width and height, so we can correctly interpret the flat
         // vector in the next step
-        |dims, _| {
+        move |dims, _| {
             (
                 dims.width(),
                 dims.height(),
-                vec![Pixel::zero(); dims.width() * dims.height()],
+                vec![
+                    Pixel::zero();
+                    get_image_stride(dims.width(), rowbytes) * dims.height()
+                ],
             )
         },
         // Fill in pixel data
-        |&mut (width, height, ref mut pixels),
-         position,
-         (r, g, b, a): (f32, f32, f32, f32)| {
+        move |&mut (width, height, ref mut pixels),
+              position,
+              (r, g, b, a): (f32, f32, f32, f32)| {
             // Flip y and convert to flat index
-            let index = (height - 1 - position.y()) * width + position.x();
+            let index = (height - 1 - position.y()) * get_image_stride(width, rowbytes)
+                + position.x();
             pixels[index] = Pixel {
                 r: r,
                 g: g,
@@ -1266,6 +1298,8 @@ fn read_exr(name: &str, path: &str, origin: (i32, i32)) -> Result<Image> {
     .channel_data
     .pixels; // Get the pixel storage we constructed
 
+    eprintln!("width: {}", width);
+
     let (x1, y1) = origin;
     let bounds = OfxRectI {
         x1,
@@ -1275,7 +1309,12 @@ fn read_exr(name: &str, path: &str, origin: (i32, i32)) -> Result<Image> {
     };
 
     // Discard the exr image struct and build our own
-    Ok(Image::new(name, &bounds, pixels))
+    Ok(Image::new(
+        name,
+        &bounds,
+        pixels,
+        get_image_stride(width, rowbytes),
+    ))
 }
 
 fn write_exr(filename: &str, image: Image) -> GenericResult {
@@ -1285,8 +1324,7 @@ fn write_exr(filename: &str, image: Image) -> GenericResult {
         image.bounds.height(),
         |x, y| {
             // Flip y and convert to flat index
-            let pixel =
-                &image.pixels[(image.bounds.height() - 1 - y) * image.bounds.width() + x];
+            let pixel = &image.pixels[(image.bounds.height() - 1 - y) * image.stride + x];
             (pixel.r, pixel.g, pixel.b, pixel.a)
         },
     )?;
@@ -1507,7 +1545,7 @@ fn get_output_rect(
 
 fn render_filter(
     instance_name: &str,
-    input_file: &str,
+    input: &Input,
     output_directory: Option<&String>,
     layout: Option<&RenderLayout>,
     frame_range: (FrameNumber, FrameNumber),
@@ -1524,7 +1562,7 @@ fn render_filter(
     let instance = context.get_instance(instance_name)?;
     let plugin = context.get_plugin(&instance.plugin_name)?;
 
-    let input = read_exr("input", input_file, input_origin)?;
+    let input = read_exr("input", &input.filename, input.rowbytes, input_origin)?;
     let width = input.bounds.width();
     let height = input.bounds.height();
 
@@ -1552,6 +1590,7 @@ fn render_filter(
         input,
         project_dims.into(),
         &output_rect,
+        layout.and_then(|l| l.rowbytes),
         frame_min,
         frame_limit,
     );
@@ -2040,14 +2079,14 @@ fn process_command(command: &Command, context: &mut CommandContext) -> GenericRe
         } => create_filter(plugin_name, instance_name, context).context("CreateFilter"),
         RenderFilter {
             instance_name,
-            input_file,
+            input,
             output_directory,
             layout,
             frame_range,
             thread_count,
         } => render_filter(
             instance_name,
-            input_file,
+            input,
             output_directory.as_ref(),
             layout.as_ref(),
             *frame_range,
