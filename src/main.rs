@@ -1346,13 +1346,14 @@ struct Instance {
     effect: Object<ImageEffect>,
 }
 
-struct CommandContext<'a> {
+// Mutable state for running commands
+struct CommandState<'a> {
     host: &'a OfxHost,
     plugins: HashMap<String, LoadedPlugin>,
     instances: HashMap<String, Instance>,
 }
 
-impl<'a> CommandContext<'a> {
+impl<'a> CommandState<'a> {
     fn get_plugin(&self, name: &str) -> Result<&LoadedPlugin> {
         self.plugins
             .get(name)
@@ -1402,14 +1403,14 @@ fn list_plugins(bundle_name: &str) -> GenericResult {
 fn create_plugin(
     bundle_name: &str,
     plugin_name: &str,
-    context: &mut CommandContext,
+    state: &mut CommandState,
 ) -> GenericResult {
     let (bundle, lib) = load_bundle(bundle_name)?;
     let plugin = get_plugins(&lib)?
         .into_iter()
         .find(|p| p.plugin_identifier == plugin_name)
         .ok_or(anyhow!("Plugin {} not found in bundle", plugin_name))?;
-    unsafe { (plugin.set_host)((context.host as *const _) as *mut _) };
+    unsafe { (plugin.set_host)((state.host as *const _) as *mut _) };
     plugin.try_call_action(
         constants::ActionLoad,
         ImageEffectHandle::from(std::ptr::null_mut()),
@@ -1425,7 +1426,7 @@ fn create_plugin(
         PropertySetHandle::from(std::ptr::null_mut()),
     )?;
 
-    context.plugins.insert(
+    state.plugins.insert(
         plugin_name.to_string(),
         LoadedPlugin {
             bundle,
@@ -1440,10 +1441,10 @@ fn create_plugin(
 fn create_filter(
     plugin_name: &str,
     instance_name: &str,
-    context: &mut CommandContext,
+    state: &mut CommandState,
 ) -> GenericResult {
     let effect = {
-        let plugin = context.get_plugin(plugin_name)?;
+        let plugin = state.get_plugin(plugin_name)?;
         let descriptor = plugin.descriptor.lock();
         let values = &descriptor.properties.lock().values;
         if !values
@@ -1505,7 +1506,7 @@ fn create_filter(
         )?;
         filter_instance
     };
-    context.instances.insert(
+    state.instances.insert(
         instance_name.to_string(),
         Instance {
             plugin_name: plugin_name.to_string(),
@@ -1550,7 +1551,7 @@ fn render_filter(
     layout: Option<&RenderLayout>,
     frame_range: (FrameNumber, FrameNumber),
     thread_count: u32,
-    context: &mut CommandContext,
+    state: &mut CommandState,
 ) -> GenericResult {
     let (FrameNumber(frame_min), FrameNumber(frame_limit)) = frame_range;
     if frame_limit <= frame_min {
@@ -1559,8 +1560,8 @@ fn render_filter(
 
     let input_origin = layout.map(|l| l.input_origin).unwrap_or((0, 0));
 
-    let instance = context.get_instance(instance_name)?;
-    let plugin = context.get_plugin(&instance.plugin_name)?;
+    let instance = state.get_instance(instance_name)?;
+    let plugin = state.get_plugin(&instance.plugin_name)?;
 
     let input = read_exr("input", &input.filename, input.rowbytes, input_origin)?;
     let width = input.bounds.width();
@@ -1688,10 +1689,10 @@ fn get_rois(
     instance_name: &str,
     project_extent: (f64, f64),
     region_of_interest: &OfxRectD,
-    context: &mut CommandContext,
+    state: &mut CommandState,
 ) -> Result<OfxRectD> {
-    let instance = context.get_instance(instance_name)?;
-    let plugin = context.get_plugin(&instance.plugin_name)?;
+    let instance = state.get_instance(instance_name)?;
+    let plugin = state.get_plugin(&instance.plugin_name)?;
 
     get_rois_for_instance(project_extent, region_of_interest, instance, plugin)
 }
@@ -1785,10 +1786,10 @@ fn get_rod(
     instance_name: &str,
     project_extent: (f64, f64),
     input_rod: &OfxRectD,
-    context: &mut CommandContext,
+    state: &mut CommandState,
 ) -> Result<OfxRectD> {
-    let instance = context.get_instance(instance_name)?;
-    let plugin = context.get_plugin(&instance.plugin_name)?;
+    let instance = state.get_instance(instance_name)?;
+    let plugin = state.get_plugin(&instance.plugin_name)?;
 
     get_rod_for_instance(project_extent, input_rod, instance, plugin)
 }
@@ -1859,10 +1860,10 @@ fn set_params(
     instance_name: &str,
     values: &[(String, ParamValue)],
     call_instance_changed: bool,
-    context: &mut CommandContext,
+    state: &mut CommandState,
 ) -> GenericResult {
-    let instance = context.get_instance(instance_name)?;
-    let plugin = context.get_plugin(&instance.plugin_name)?;
+    let instance = state.get_instance(instance_name)?;
+    let plugin = state.get_plugin(&instance.plugin_name)?;
 
     let inargs1 = PropertySet::new(
         "begin_instance_changed",
@@ -1929,11 +1930,11 @@ fn set_params(
 fn describe(
     bundle_name: &str,
     plugin_name: &str,
-    context: &mut CommandContext,
+    state: &mut CommandState,
 ) -> Result<ImageEffect> {
-    create_plugin(bundle_name, plugin_name, context)?;
+    create_plugin(bundle_name, plugin_name, state)?;
 
-    let plugin = context.get_plugin(plugin_name)?;
+    let plugin = state.get_plugin(plugin_name)?;
     plugin.plugin.try_call_action(
         constants::ActionDescribe,
         plugin.descriptor.clone().into(),
@@ -1947,11 +1948,11 @@ fn describe(
 fn describe_filter(
     bundle_name: &str,
     plugin_name: &str,
-    context: &mut CommandContext,
+    state: &mut CommandState,
 ) -> GenericResult {
-    describe(bundle_name, plugin_name, context)?;
+    describe(bundle_name, plugin_name, state)?;
 
-    let plugin = context.get_plugin(plugin_name)?;
+    let plugin = state.get_plugin(plugin_name)?;
 
     // Descriptor for the plugin in Filter context
     let filter = ImageEffect {
@@ -1991,9 +1992,9 @@ fn describe_filter(
 fn configure_message_suite_responses(
     instance_name: &str,
     responses: &[MessageSuiteResponses],
-    context: &mut CommandContext,
+    state: &mut CommandState,
 ) -> GenericResult {
-    let instance = context.get_instance(instance_name)?;
+    let instance = state.get_instance(instance_name)?;
     use MessageSuiteResponses::*;
     instance.effect.lock().message_suite_responses = responses
         .iter()
@@ -2010,9 +2011,9 @@ fn configure_message_suite_responses(
 
 fn set_host_properties(
     props: &HashMap<String, Vec<commands::PropertyValue>>,
-    context: &mut CommandContext,
+    state: &mut CommandState,
 ) {
-    context.host.host.with_object(|host_properties| {
+    state.host.host.with_object(|host_properties| {
         props.iter().for_each(|(name, value)| {
             host_properties.values.insert(
                 name.clone(),
@@ -2031,8 +2032,8 @@ fn set_host_properties(
     });
 }
 
-fn print_params(instance_name: &str, context: &mut CommandContext) -> GenericResult {
-    let instance = context.get_instance(instance_name)?;
+fn print_params(instance_name: &str, state: &mut CommandState) -> GenericResult {
+    let instance = state.get_instance(instance_name)?;
     println!(
         "{}",
         serde_json::to_string(&*instance.effect.lock().param_set.lock())?
@@ -2040,43 +2041,43 @@ fn print_params(instance_name: &str, context: &mut CommandContext) -> GenericRes
     Ok(())
 }
 
-fn destroy_instance(instance_name: &str, context: &mut CommandContext) -> GenericResult {
-    let instance = context.get_instance(instance_name)?;
-    let plugin = context.get_plugin(&instance.plugin_name)?;
+fn destroy_instance(instance_name: &str, state: &mut CommandState) -> GenericResult {
+    let instance = state.get_instance(instance_name)?;
+    let plugin = state.get_plugin(&instance.plugin_name)?;
     plugin.plugin.try_call_action(
         constants::ActionDestroyInstance,
         instance.effect.clone().into(),
         PropertySetHandle::from(std::ptr::null_mut()),
         PropertySetHandle::from(std::ptr::null_mut()),
     )?;
-    context.instances.remove(instance_name);
+    state.instances.remove(instance_name);
     Ok(())
 }
 
-fn unload_plugin(plugin_name: &str, context: &mut CommandContext) -> GenericResult {
-    let plugin = context.get_plugin(plugin_name)?;
+fn unload_plugin(plugin_name: &str, state: &mut CommandState) -> GenericResult {
+    let plugin = state.get_plugin(plugin_name)?;
     plugin.plugin.try_call_action(
         constants::ActionUnload,
         ImageEffectHandle::from(std::ptr::null_mut()),
         PropertySetHandle::from(std::ptr::null_mut()),
         PropertySetHandle::from(std::ptr::null_mut()),
     )?;
-    context.plugins.remove(plugin_name);
+    state.plugins.remove(plugin_name);
     Ok(())
 }
 
-fn process_command(command: &Command, context: &mut CommandContext) -> GenericResult {
+fn process_command(command: &Command, state: &mut CommandState) -> GenericResult {
     use commands::Command::*;
 
     match command {
         CreatePlugin {
             bundle_name,
             plugin_name,
-        } => create_plugin(bundle_name, plugin_name, context).context("CreatePlugin"),
+        } => create_plugin(bundle_name, plugin_name, state).context("CreatePlugin"),
         CreateFilter {
             plugin_name,
             instance_name,
-        } => create_filter(plugin_name, instance_name, context).context("CreateFilter"),
+        } => create_filter(plugin_name, instance_name, state).context("CreateFilter"),
         RenderFilter {
             instance_name,
             input,
@@ -2091,46 +2092,44 @@ fn process_command(command: &Command, context: &mut CommandContext) -> GenericRe
             layout.as_ref(),
             *frame_range,
             *thread_count,
-            context,
+            state,
         )
         .context("RenderFilter"),
         PrintParams { instance_name } => {
-            print_params(instance_name, context).context("PrintParams")
+            print_params(instance_name, state).context("PrintParams")
         }
         DestroyInstance { instance_name } => {
-            destroy_instance(instance_name, context).context("DestroyInstance")
+            destroy_instance(instance_name, state).context("DestroyInstance")
         }
         UnloadPlugin { plugin_name } => {
-            unload_plugin(plugin_name, context).context("UnloadPlugin")
+            unload_plugin(plugin_name, state).context("UnloadPlugin")
         }
         SetParams {
             instance_name,
             values,
             call_instance_changed,
-        } => set_params(instance_name, values, *call_instance_changed, context)
+        } => set_params(instance_name, values, *call_instance_changed, state)
             .context("SetParams"),
         ListPlugins { bundle_name } => list_plugins(bundle_name).context("ListPlugins"),
         Describe {
             bundle_name,
             plugin_name,
         } => {
-            let effect =
-                describe(bundle_name, plugin_name, context).context("Describe")?;
+            let effect = describe(bundle_name, plugin_name, state).context("Describe")?;
             println!("{}", serde_json::to_string(&*effect.properties.lock())?);
             Ok(())
         }
         DescribeFilter {
             bundle_name,
             plugin_name,
-        } => describe_filter(bundle_name, plugin_name, context).context("DescribeFilter"),
+        } => describe_filter(bundle_name, plugin_name, state).context("DescribeFilter"),
         PrintRoIs {
             instance_name,
             region_of_interest,
             project_extent,
         } => {
-            let roi =
-                get_rois(instance_name, *project_extent, region_of_interest, context)
-                    .context("PrintRoIs")?;
+            let roi = get_rois(instance_name, *project_extent, region_of_interest, state)
+                .context("PrintRoIs")?;
             println!("{}", serde_json::to_string(&roi)?);
             Ok(())
         }
@@ -2139,7 +2138,7 @@ fn process_command(command: &Command, context: &mut CommandContext) -> GenericRe
             input_rod,
             project_extent,
         } => {
-            let rod = get_rod(instance_name, *project_extent, input_rod, context)
+            let rod = get_rod(instance_name, *project_extent, input_rod, state)
                 .context("PrintRoD")?;
             println!("{}", serde_json::to_string(&rod)?);
             Ok(())
@@ -2147,10 +2146,10 @@ fn process_command(command: &Command, context: &mut CommandContext) -> GenericRe
         ConfigureMessageSuiteResponses {
             instance_name,
             responses,
-        } => configure_message_suite_responses(instance_name, responses, context)
+        } => configure_message_suite_responses(instance_name, responses, state)
             .context("ConfigureMessageSuiteResponses"),
         SetHostProperties { props } => {
-            set_host_properties(props, context);
+            set_host_properties(props, state);
             Ok(())
         }
     }
@@ -2292,7 +2291,7 @@ fn main() {
         fetchSuite: Some(fetch_suite),
     };
 
-    let mut context = CommandContext {
+    let mut state = CommandState {
         host: &host,
         plugins: HashMap::new(),
         instances: HashMap::new(),
@@ -2326,7 +2325,7 @@ fn main() {
     };
 
     for ref c in commands {
-        if let Err(e) = process_command(c, &mut context) {
+        if let Err(e) = process_command(c, &mut state) {
             eprintln!("Error running command: {:?}", e);
             std::process::exit(-1);
         }
