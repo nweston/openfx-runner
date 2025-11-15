@@ -12,6 +12,16 @@ pub enum MessageSuiteResponses {
     Failed,
 }
 
+#[derive(Deserialize, Serialize, Copy, Clone)]
+pub enum ImageEffectContext {
+    Filter,
+    General,
+    Generator,
+    Paint,
+    Retimer,
+    Transition,
+}
+
 #[derive(Deserialize, Serialize)]
 pub struct RenderLayout {
     pub project_dims: (f64, f64),
@@ -54,11 +64,12 @@ pub enum Command {
         bundle_name: String,
         plugin_name: String,
     },
-    /// Create an instance of a plugin with the Filter context.
+    /// Create an instance of a plugin with the given context.
     /// Calls DescribeInContext and CreateInstance actions.
-    CreateFilter {
+    CreateInstance {
         plugin_name: String,
         instance_name: String,
+        context: ImageEffectContext,
     },
     /// Render a single frame with a filter instance.
     RenderFilter {

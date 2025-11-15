@@ -1168,7 +1168,6 @@ fn create_params(descriptors: &[Object<PropertySet>]) -> HashMap<String, Object<
 }
 
 fn create_instance(descriptor: &ImageEffect, context: &str) -> ImageEffect {
-    // TODO: adjust clips according to context
     let clips = copy_map(&descriptor.clips);
     let properties = PropertySet::new(
         "instance",
@@ -1438,18 +1437,32 @@ fn create_plugin(
     Ok(())
 }
 
-fn create_filter(
+fn image_effect_context_str(context: ImageEffectContext) -> OfxStr<'static> {
+    match context {
+        ImageEffectContext::Filter => constants::ImageEffectContextFilter,
+        ImageEffectContext::General => constants::ImageEffectContextGeneral,
+        ImageEffectContext::Generator => constants::ImageEffectContextGenerator,
+        ImageEffectContext::Paint => constants::ImageEffectContextPaint,
+        ImageEffectContext::Retimer => constants::ImageEffectContextRetimer,
+        ImageEffectContext::Transition => constants::ImageEffectContextTransition,
+    }
+}
+
+fn create(
     plugin_name: &str,
     instance_name: &str,
+    context: ImageEffectContext,
     state: &mut CommandState,
 ) -> GenericResult {
     let effect = {
         let plugin = state.get_plugin(plugin_name)?;
         let descriptor = plugin.descriptor.lock();
         let values = &descriptor.properties.lock().values;
+        let context_str = image_effect_context_str(context);
+
         if !values
             .get(constants::ImageEffectPropSupportedContexts.as_str())
-            .map(|p| p.0.contains(&constants::ImageEffectContextFilter.into()))
+            .map(|p| p.0.contains(&context_str.into()))
             .unwrap_or(false)
         {
             bail!("Filter context not supported");
@@ -1478,10 +1491,7 @@ fn create_filter(
 
         let filter_inargs = PropertySet::new(
             "filter_inargs",
-            [(
-                constants::ImageEffectPropContext,
-                constants::ImageEffectContextFilter.into(),
-            )],
+            [(constants::ImageEffectPropContext, context_str.into())],
         )
         .into_object();
         #[allow(clippy::redundant_clone)]
@@ -1495,8 +1505,7 @@ fn create_filter(
         // Instance of the filter. Both instances and descriptors are
         // ImageEffect objects.
         let filter_instance: Object<ImageEffect> =
-            create_instance(&filter.lock(), constants::ImageEffectContextFilter.as_str())
-                .into_object();
+            create_instance(&filter.lock(), context_str.as_str()).into_object();
 
         plugin.plugin.try_call_action(
             constants::ActionCreateInstance,
@@ -2076,10 +2085,11 @@ fn process_command(command: &Command, state: &mut CommandState) -> GenericResult
             bundle_name,
             plugin_name,
         } => create_plugin(bundle_name, plugin_name, state).context("CreatePlugin"),
-        CreateFilter {
+        CreateInstance {
             plugin_name,
             instance_name,
-        } => create_filter(plugin_name, instance_name, state).context("CreateFilter"),
+            context,
+        } => create(plugin_name, instance_name, *context, state).context("CreateFilter"),
         RenderFilter {
             instance_name,
             input,
