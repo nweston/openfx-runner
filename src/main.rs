@@ -622,6 +622,29 @@ impl ImageEffect {
     fn get_param(&self, name: &str) -> Option<Object<Param>> {
         self.param_set.lock().params.get(name).cloned()
     }
+
+    fn get_clip(&self, name: &str) -> Result<&Object<Clip>> {
+        self.clips
+            .get(name)
+            .context(format!("Instance has no clip '{}'", name))
+    }
+
+    fn check_required_inputs(&self) -> GenericResult {
+        for (name, clip) in &self.clips {
+            let c = clip.lock();
+            let optional = c
+                .properties
+                .lock()
+                .get_type::<i32>(constants::ImageClipPropOptional, 0)
+                .unwrap_or(0);
+            if optional == 0 {
+                if let ClipImages::NoImage = c.images {
+                    bail!("No image for required clip {}", name);
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 impl Default for ImageEffect {
@@ -994,18 +1017,15 @@ impl PropertySet {
     }
 
     /// Get all values of a property and return as OfxRectD.
-    fn get_rectd(&self, key: OfxStr) -> Result<OfxRectD, OfxError> {
+    fn get_rectd(&self, key: OfxStr) -> Result<OfxRectD> {
         let values = self.get_all(key)?;
         if values.len() != 4 {
-            Err(OfxError {
-                message: format!(
-                    "Property {} bad length {} on {}",
-                    key,
-                    values.len(),
-                    self.name
-                ),
-                status: ofxstatus::ErrBadIndex,
-            })
+            bail!(
+                "Property {} bad length {} on {}",
+                key,
+                values.len(),
+                self.name
+            )
         } else {
             Ok(OfxRectD {
                 x1: values[0].clone().into(),
@@ -1209,13 +1229,13 @@ fn create_instance(descriptor: &ImageEffect, context: &str) -> ImageEffect {
 
 fn create_images(
     effect: &mut ImageEffect,
-    input: Image,
+    inputs: HashMap<String, Image>,
     project_dims: Property,
     output_rect: &OfxRectI,
     output_rowbytes: Option<usize>,
     frame_min: u32,
     frame_limit: u32,
-) {
+) -> GenericResult {
     effect.properties.lock().values.insert(
         constants::ImageEffectPropProjectSize.to_string(),
         project_dims.clone(),
@@ -1225,8 +1245,10 @@ fn create_images(
         project_dims,
     );
 
-    effect.clips.get("Source").unwrap().lock().set_image(input);
-    let mut output = effect.clips.get("Output").unwrap().lock();
+    for (name, image) in inputs {
+        effect.get_clip(&name)?.lock().set_image(image);
+    }
+    let mut output = effect.get_clip("Output")?.lock();
 
     output.set_images(
         output_rect.width(),
@@ -1240,6 +1262,7 @@ fn create_images(
             })
             .collect(),
     );
+    Ok(())
 }
 
 // Number of pixels per row. If rowbytes is provided, try to make
@@ -1526,7 +1549,7 @@ fn create(
 }
 
 fn get_output_rect(
-    input: &Image,
+    inputs: &HashMap<String, Image>,
     layout: Option<&RenderLayout>,
     project_rect: OfxRectD,
     instance: &Instance,
@@ -1536,12 +1559,17 @@ fn get_output_rect(
         if let Some(w) = l.render_window {
             w
         } else {
+            let rods: HashMap<String, OfxRectD> = inputs
+                .iter()
+                .map(|(name, input)| (name.clone(), rect_to_double(input.bounds)))
+                .collect();
+
             // If layout is given but doesn't specify the render
             // window, compute it with the plugin's RoD action
             crop(
                 rect_to_int(get_rod_for_instance(
                     (project_rect.x2, project_rect.y2),
-                    &rect_to_double(input.bounds),
+                    &rods,
                     instance,
                     plugin,
                 )?),
@@ -1557,9 +1585,9 @@ fn get_input_image(name: &str, input: &Input) -> Result<Image> {
     read_exr(name, &input.filename, input.rowbytes, input.origin)
 }
 
-fn render_filter(
+fn render(
     instance_name: &str,
-    input: &Input,
+    inputs: &HashMap<String, Input>,
     output_directory: Option<&String>,
     layout: Option<&RenderLayout>,
     frame_range: (FrameNumber, FrameNumber),
@@ -1574,38 +1602,56 @@ fn render_filter(
     let instance = state.get_instance(instance_name)?;
     let plugin = state.get_plugin(&instance.plugin_name)?;
 
-    let input = get_input_image("input", input)?;
-    let width = input.bounds.width();
-    let height = input.bounds.height();
+    let input_images = inputs
+        .into_iter()
+        .map(|(name, input)| {
+            get_input_image(name, input).map(|image| (name.clone(), image))
+        })
+        .collect::<Result<HashMap<_, _>>>()
+        .with_context(|| "Reading input images")?;
 
     // If no layout is given, default project dims and output to match
     // the input image
-    let project_dims = layout
-        .map(|l| [l.project_dims.0, l.project_dims.1])
-        .unwrap_or([(width as f64), (height as f64)]);
+    let project_dims = if let Some(l) = layout {
+        [l.project_dims.0, l.project_dims.1]
+    } else if let Some(image) = input_images.get("Source") {
+        [image.bounds.width() as f64, image.bounds.height() as f64]
+    } else {
+        bail!("No Source input, please specify render layout.");
+    };
+
     let project_rect = rect_from_dims(project_dims[0], project_dims[1]);
 
-    let output_rect = get_output_rect(&input, layout, project_rect, instance, plugin)?;
+    let output_rect =
+        get_output_rect(&input_images, layout, project_rect, instance, plugin)?;
 
+    // Crop images to corresponding input RoIs
     if layout.map(|l| l.crop_inputs_to_roi).unwrap_or(false) {
-        let roi = get_rois_for_instance(
+        let rois = get_rois_for_instance(
             (project_dims[0], project_dims[1]),
             &rect_to_double(output_rect),
             instance,
             plugin,
         )?;
-        input.crop(&rect_to_int(roi));
+        for (name, image) in input_images.iter() {
+            let roi = rois
+                .get(name)
+                .context(format!("Missing RoI for clip {}", name))?;
+            image.crop(&rect_to_int(*roi));
+        }
     }
 
     create_images(
         &mut instance.effect.lock(),
-        input,
+        input_images,
         project_dims.into(),
         &output_rect,
         layout.and_then(|l| l.rowbytes),
         frame_min,
         frame_limit,
-    );
+    )?;
+
+    instance.effect.lock().check_required_inputs()?;
 
     let render_range = move |start, limit| -> GenericResult {
         for frame in start..limit {
@@ -1701,7 +1747,7 @@ fn get_rois(
     project_extent: (f64, f64),
     region_of_interest: &OfxRectD,
     state: &mut CommandState,
-) -> Result<OfxRectD> {
+) -> Result<HashMap<String, OfxRectD>> {
     let instance = state.get_instance(instance_name)?;
     let plugin = state.get_plugin(&instance.plugin_name)?;
 
@@ -1713,28 +1759,11 @@ fn get_rois_for_instance(
     region_of_interest: &OfxRectD,
     instance: &Instance,
     plugin: &LoadedPlugin,
-) -> Result<OfxRectD> {
+) -> Result<HashMap<String, OfxRectD>> {
     let (width, height) = project_extent;
 
     // Set effect properties
     set_project_props(instance, width, height);
-    {
-        instance
-            .effect
-            .lock()
-            .clips
-            .get("Source")
-            .unwrap()
-            .lock()
-            .region_of_definition = Some(OfxRectD {
-            x1: 0.0,
-            y1: 0.0,
-            x2: width,
-            y2: height,
-        });
-    }
-
-    let roi_prop = OfxStr::from_str("OfxImageClipPropRoI_Source\0");
 
     let inargs = PropertySet::new(
         "getRoI_inargs",
@@ -1759,9 +1788,29 @@ fn get_rois_for_instance(
     )
     .into_object();
 
-    let outargs =
-        PropertySet::new("getRoI_outargs", &[(roi_prop, region_of_interest.into())])
-            .into_object();
+    let clips: Vec<_> = instance
+        .effect
+        .lock()
+        .clips
+        .keys()
+        .filter(|c| *c != "Output")
+        .map(|c| c.clone())
+        .collect();
+
+    let roi_props: Vec<_> = clips
+        .iter()
+        .map(|c| format!("OfxImageClipPropRoI_{}\0", c))
+        .collect();
+
+    let outargs = PropertySet::new(
+        "getRoI_outargs",
+        roi_props
+            .iter()
+            .map(|p| (OfxStr::from_str(&p), region_of_interest.into()))
+            .collect::<Vec<_>>()
+            .as_slice(),
+    )
+    .into_object();
 
     #[allow(clippy::redundant_clone)]
     plugin.plugin.try_call_action(
@@ -1772,7 +1821,17 @@ fn get_rois_for_instance(
     )?;
 
     let out = outargs.lock();
-    Ok(out.get_rectd(roi_prop)?)
+    // Collect RoI for all clips
+    clips
+        .iter()
+        .map(|c| {
+            let prop = format!("OfxImageClipPropRoI_{}\0", c);
+            let rect = out
+                .get_rectd(OfxStr::from_str(&prop))
+                .with_context(|| format!("Property {} not set in out args", prop));
+            rect.map(|r| (c.clone(), r))
+        })
+        .collect()
 }
 
 fn set_project_props(instance: &Instance, width: f64, height: f64) {
@@ -1796,18 +1855,18 @@ fn set_project_props(instance: &Instance, width: f64, height: f64) {
 fn get_rod(
     instance_name: &str,
     project_extent: (f64, f64),
-    input_rod: &OfxRectD,
+    input_rods: &HashMap<String, OfxRectD>,
     state: &mut CommandState,
 ) -> Result<OfxRectD> {
     let instance = state.get_instance(instance_name)?;
     let plugin = state.get_plugin(&instance.plugin_name)?;
 
-    get_rod_for_instance(project_extent, input_rod, instance, plugin)
+    get_rod_for_instance(project_extent, input_rods, instance, plugin)
 }
 
 fn get_rod_for_instance(
     project_extent: (f64, f64),
-    input_rod: &OfxRectD,
+    input_rods: &HashMap<String, OfxRectD>,
     instance: &Instance,
     plugin: &LoadedPlugin,
 ) -> Result<OfxRectD> {
@@ -1815,15 +1874,13 @@ fn get_rod_for_instance(
 
     // Set effect properties
     set_project_props(instance, width, height);
-    {
+    for (name, rod) in input_rods {
         instance
             .effect
             .lock()
-            .clips
-            .get("Source")
-            .unwrap()
+            .get_clip(name)?
             .lock()
-            .region_of_definition = Some(*input_rod);
+            .region_of_definition = Some(*rod);
     }
 
     let inargs = PropertySet::new(
@@ -1845,14 +1902,7 @@ fn get_rod_for_instance(
     )
     .into_object();
 
-    let outargs = PropertySet::new(
-        "getRoD_outargs",
-        &[(
-            constants::ImageEffectPropRegionOfDefinition,
-            input_rod.into(),
-        )],
-    )
-    .into_object();
+    let outargs = PropertySet::new("getRoD_outargs", &[]).into_object();
 
     #[allow(clippy::redundant_clone)]
     plugin.plugin.try_call_action(
@@ -2090,16 +2140,16 @@ fn process_command(command: &Command, state: &mut CommandState) -> GenericResult
             instance_name,
             context,
         } => create(plugin_name, instance_name, *context, state).context("CreateFilter"),
-        RenderFilter {
+        Render {
             instance_name,
-            input,
+            inputs,
             output_directory,
             layout,
             frame_range,
             thread_count,
-        } => render_filter(
+        } => render(
             instance_name,
-            input,
+            inputs,
             output_directory.as_ref(),
             layout.as_ref(),
             *frame_range,
@@ -2147,10 +2197,10 @@ fn process_command(command: &Command, state: &mut CommandState) -> GenericResult
         }
         PrintRoD {
             instance_name,
-            input_rod,
+            input_rods,
             project_extent,
         } => {
-            let rod = get_rod(instance_name, *project_extent, input_rod, state)
+            let rod = get_rod(instance_name, *project_extent, input_rods, state)
                 .context("PrintRoD")?;
             println!("{}", serde_json::to_string(&rod)?);
             Ok(())

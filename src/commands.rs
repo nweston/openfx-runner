@@ -71,10 +71,10 @@ pub enum Command {
         instance_name: String,
         context: ImageEffectContext,
     },
-    /// Render a single frame with a filter instance.
-    RenderFilter {
+    /// Render a range of frames
+    Render {
         instance_name: String,
-        input: Input,
+        inputs: HashMap<String, Input>,
         output_directory: Option<String>,
         layout: Option<RenderLayout>,
         #[serde(default = "default_frame_range")]
@@ -114,7 +114,7 @@ pub enum Command {
     },
     PrintRoD {
         instance_name: String,
-        input_rod: OfxRectD,
+        input_rods: HashMap<String, OfxRectD>,
         project_extent: (f64, f64),
     },
     /// Configure responses for subsequent message suite calls
