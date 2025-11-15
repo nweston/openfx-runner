@@ -1544,6 +1544,10 @@ fn get_output_rect(
     })
 }
 
+fn get_input_image(name: &str, input: &Input) -> Result<Image> {
+    read_exr(name, &input.filename, input.rowbytes, input.origin)
+}
+
 fn render_filter(
     instance_name: &str,
     input: &Input,
@@ -1558,12 +1562,10 @@ fn render_filter(
         bail!(format!("Invalid frame range {frame_min}..{frame_limit}"));
     }
 
-    let input_origin = layout.map(|l| l.input_origin).unwrap_or((0, 0));
-
     let instance = state.get_instance(instance_name)?;
     let plugin = state.get_plugin(&instance.plugin_name)?;
 
-    let input = read_exr("input", &input.filename, input.rowbytes, input_origin)?;
+    let input = get_input_image("input", input)?;
     let width = input.bounds.width();
     let height = input.bounds.height();
 

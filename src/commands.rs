@@ -15,7 +15,6 @@ pub enum MessageSuiteResponses {
 #[derive(Deserialize, Serialize)]
 pub struct RenderLayout {
     pub project_dims: (f64, f64),
-    pub input_origin: (i32, i32),
     // Optionally specify the render window. If missing, use RoD
     pub render_window: Option<OfxRectI>,
     pub rowbytes: Option<usize>,
@@ -30,10 +29,16 @@ pub enum PropertyValue {
     Int(c_int),
 }
 
+fn default_origin() -> (i32, i32) {
+    (0, 0)
+}
+
 #[derive(Deserialize, Serialize)]
 pub struct Input {
     pub filename: String,
     pub rowbytes: Option<usize>,
+    #[serde(default = "default_origin")]
+    pub origin: (i32, i32),
 }
 
 fn default_frame_range() -> (FrameNumber, FrameNumber) {
