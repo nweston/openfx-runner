@@ -297,7 +297,7 @@ impl ParamSet {
     fn create_param(&mut self, kind: OfxStr, name: OfxStr) -> PropertySetHandle {
         let props = PropertySet::new(
             &("param_".to_string() + name.as_str()),
-            [
+            &[
                 (constants::PropName, name.into()),
                 (constants::ParamPropType, kind.into()),
             ],
@@ -311,7 +311,7 @@ impl ParamSet {
 impl Default for ParamSet {
     fn default() -> Self {
         Self {
-            properties: PropertySet::new("paramSet", []).into_object(),
+            properties: PropertySet::new("paramSet", &[]).into_object(),
             descriptors: Default::default(),
             params: Default::default(),
         }
@@ -352,7 +352,7 @@ impl Image {
     fn new(name: &str, bounds: &OfxRectI, mut pixels: Vec<Pixel>, stride: usize) -> Self {
         let properties = PropertySet::new(
             &format!("{}_image", name),
-            [
+            &[
                 (constants::PropType, constants::TypeImage.into()),
                 (
                     constants::ImageEffectPropPixelDepth,
@@ -595,7 +595,7 @@ impl ImageEffect {
                 name: name.to_string(),
                 properties: PropertySet::new(
                     &format!("clip_{}", name),
-                    [
+                    &[
                         (
                             constants::ImageEffectPropPixelDepth,
                             constants::BitDepthFloat.into(),
@@ -627,7 +627,7 @@ impl ImageEffect {
 impl Default for ImageEffect {
     fn default() -> Self {
         Self {
-            properties: PropertySet::new("ImageEffect", []).into_object(),
+            properties: PropertySet::new("ImageEffect", &[]).into_object(),
             param_set: Default::default(),
             clips: Default::default(),
             message_suite_responses: vec![ofxstatus::ReplyYes, ofxstatus::ReplyNo], // Default::default(),
@@ -953,10 +953,10 @@ pub struct PropertySet {
 }
 
 impl PropertySet {
-    fn new<const S: usize>(name: &str, values: [(OfxStr, Property); S]) -> Self {
+    fn new(name: &str, values: &[(OfxStr, Property)]) -> Self {
         let mut properties = HashMap::new();
         for (name, value) in values {
-            properties.insert(name.as_str().into(), value);
+            properties.insert(name.as_str().into(), value.clone());
         }
         Self {
             name: name.to_string(),
@@ -1171,7 +1171,7 @@ fn create_instance(descriptor: &ImageEffect, context: &str) -> ImageEffect {
     let clips = copy_map(&descriptor.clips);
     let properties = PropertySet::new(
         "instance",
-        [
+        &[
             (constants::ImageEffectPropContext, context.into()),
             (
                 constants::PluginPropFilePath,
@@ -1479,7 +1479,7 @@ fn create(
         let filter = ImageEffect {
             properties: PropertySet::new(
                 "filter",
-                [(
+                &[(
                     constants::PluginPropFilePath,
                     plugin.bundle.path.to_str().unwrap().into(),
                 )],
@@ -1491,7 +1491,7 @@ fn create(
 
         let filter_inargs = PropertySet::new(
             "filter_inargs",
-            [(constants::ImageEffectPropContext, context_str.into())],
+            &[(constants::ImageEffectPropContext, context_str.into())],
         )
         .into_object();
         #[allow(clippy::redundant_clone)]
@@ -1611,7 +1611,7 @@ fn render_filter(
         for frame in start..limit {
             let render_inargs = PropertySet::new(
                 "render_inargs",
-                [
+                &[
                     (constants::PropTime, (frame as f64).into()),
                     (
                         constants::ImageEffectPropFieldToRender,
@@ -1738,7 +1738,7 @@ fn get_rois_for_instance(
 
     let inargs = PropertySet::new(
         "getRoI_inargs",
-        [
+        &[
             (constants::PropTime, (0.0).into()),
             (constants::ImageEffectPropRenderScale, [1.0, 1.0].into()),
             (
@@ -1760,7 +1760,7 @@ fn get_rois_for_instance(
     .into_object();
 
     let outargs =
-        PropertySet::new("getRoI_outargs", [(roi_prop, region_of_interest.into())])
+        PropertySet::new("getRoI_outargs", &[(roi_prop, region_of_interest.into())])
             .into_object();
 
     #[allow(clippy::redundant_clone)]
@@ -1828,7 +1828,7 @@ fn get_rod_for_instance(
 
     let inargs = PropertySet::new(
         "getRoD_inargs",
-        [
+        &[
             (constants::PropTime, (0.0).into()),
             (constants::ImageEffectPropRenderScale, [1.0, 1.0].into()),
             // Not mentioned in the spec, but plugins appear to look
@@ -1847,7 +1847,7 @@ fn get_rod_for_instance(
 
     let outargs = PropertySet::new(
         "getRoD_outargs",
-        [(
+        &[(
             constants::ImageEffectPropRegionOfDefinition,
             input_rod.into(),
         )],
@@ -1878,7 +1878,7 @@ fn set_params(
 
     let inargs1 = PropertySet::new(
         "begin_instance_changed",
-        [(
+        &[(
             constants::PropChangeReason,
             constants::ChangeUserEdited.into(),
         )],
@@ -1905,7 +1905,7 @@ fn set_params(
         if call_instance_changed {
             let inargs2 = PropertySet::new(
                 "instance_changed",
-                [
+                &[
                     (constants::PropType, constants::TypeParameter.into()),
                     (constants::PropName, name.as_str().into()),
                     (
@@ -1969,7 +1969,7 @@ fn describe_filter(
     let filter = ImageEffect {
         properties: PropertySet::new(
             "filter",
-            [(
+            &[(
                 constants::PluginPropFilePath,
                 plugin.bundle.path.to_str().unwrap().into(),
             )],
@@ -1981,7 +1981,7 @@ fn describe_filter(
 
     let filter_inargs = PropertySet::new(
         "filter_inargs",
-        [(
+        &[(
             constants::ImageEffectPropContext,
             constants::ImageEffectContextFilter.into(),
         )],
@@ -2205,7 +2205,7 @@ fn main() {
         .collect();
     let host_props = PropertySet::new(
         "host",
-        [
+        &[
             (constants::PropName, "openfx-driver".into()),
             (constants::PropLabel, "OpenFX Driver".into()),
             (constants::PropVersion, version.into()),
