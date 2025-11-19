@@ -36,6 +36,18 @@ impl_handle!(ParamHandle, OfxParamHandle, Param);
 
 type GenericResult = Result<()>;
 
+macro_rules! log_error {
+    ($($tts:tt)*) => {
+        eprintln!($($tts)*);
+    }
+}
+macro_rules! output {
+    ($($tts:tt)*) => {
+        println!($($tts)*);
+    }
+}
+pub(crate) use {log_error, output};
+
 #[derive(Debug)]
 /// The result of an OFX API call.
 ///
@@ -59,7 +71,7 @@ impl OfxError {
     /// message.
     fn check_status(&self, error_message_prefix: &str) -> OfxStatus {
         if self.status.failed() {
-            eprintln!("{}{}", error_message_prefix, self.message);
+            log_error!("{}{}", error_message_prefix, self.message);
         }
         self.status
     }
@@ -1126,7 +1138,7 @@ extern "C" fn fetch_suite(
             &suite_impls::MESSAGE_SUITE as *const _ as *const c_void
         }
         _ => {
-            eprintln!("fetch_suite: {} v{} is not available", suite, version);
+            log_error!("fetch_suite: {} v{} is not available", suite, version);
             std::ptr::null()
         }
     }
@@ -1413,9 +1425,12 @@ fn load_bundle(bundle_name: &str) -> Result<(Bundle, libloading::Library)> {
 fn list_plugins(bundle_name: &str) -> GenericResult {
     let (_, lib) = load_bundle(bundle_name)?;
     for (i, p) in get_plugins(&lib)?.into_iter().enumerate() {
-        println!(
+        output!(
             "{}: {}, v{}.{}",
-            i, p.plugin_identifier, p.plugin_version_major, p.plugin_version_minor
+            i,
+            p.plugin_identifier,
+            p.plugin_version_major,
+            p.plugin_version_minor
         );
     }
     Ok(())
@@ -2044,7 +2059,7 @@ fn describe_filter(
         PropertySetHandle::from(std::ptr::null_mut()),
     )?;
 
-    println!("{}", serde_json::to_string(&*filter.lock())?);
+    output!("{}", serde_json::to_string(&*filter.lock())?);
 
     Ok(())
 }
@@ -2094,7 +2109,7 @@ fn set_host_properties(
 
 fn print_params(instance_name: &str, state: &mut CommandState) -> GenericResult {
     let instance = state.get_instance(instance_name)?;
-    println!(
+    output!(
         "{}",
         serde_json::to_string(&*instance.effect.lock().param_set.lock())?
     );
@@ -2177,7 +2192,7 @@ fn process_command(command: &Command, state: &mut CommandState) -> GenericResult
             plugin_name,
         } => {
             let effect = describe(bundle_name, plugin_name, state).context("Describe")?;
-            println!("{}", serde_json::to_string(&*effect.properties.lock())?);
+            output!("{}", serde_json::to_string(&*effect.properties.lock())?);
             Ok(())
         }
         DescribeFilter {
@@ -2191,7 +2206,7 @@ fn process_command(command: &Command, state: &mut CommandState) -> GenericResult
         } => {
             let roi = get_rois(instance_name, *project_extent, region_of_interest, state)
                 .context("PrintRoIs")?;
-            println!("{}", serde_json::to_string(&roi)?);
+            output!("{}", serde_json::to_string(&roi)?);
             Ok(())
         }
         PrintRoD {
@@ -2201,7 +2216,7 @@ fn process_command(command: &Command, state: &mut CommandState) -> GenericResult
         } => {
             let rod = get_rod(instance_name, *project_extent, input_rods, state)
                 .context("PrintRoD")?;
-            println!("{}", serde_json::to_string(&rod)?);
+            output!("{}", serde_json::to_string(&rod)?);
             Ok(())
         }
         ConfigureMessageSuiteResponses {
@@ -2387,7 +2402,7 @@ fn main() {
 
     for ref c in commands {
         if let Err(e) = process_command(c, &mut state) {
-            eprintln!("Error running command: {:?}", e);
+            log_error!("Error running command: {:?}", e);
             std::process::exit(-1);
         }
     }

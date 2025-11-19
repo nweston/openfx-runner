@@ -1,7 +1,9 @@
 #![allow(non_snake_case)]
 use crate::handles::{ToHandle, WithObject};
 use crate::{handles::*, Clip};
-use crate::{FromProperty, OfxError, ParamValue, PropertySet, PropertyValue};
+use crate::{
+    log_error, output, FromProperty, OfxError, ParamValue, PropertySet, PropertyValue,
+};
 
 #[cfg(target_os = "windows")]
 use libc::{free, malloc};
@@ -517,7 +519,7 @@ extern "C" fn propGetDimension(
                 unsafe { *count = values.0.len() as i32 }
                 ofxstatus::OK
             } else {
-                eprintln!("propGetDimension: {} not found in {}", key, props.name);
+                log_error!("propGetDimension: {} not found in {}", key, props.name);
                 ofxstatus::ErrUnknown
             }
         })
@@ -891,7 +893,7 @@ extern "C" fn message_impl(
     } else {
         OfxStr::from_ptr(messageId)
     };
-    println!(
+    output!(
         "{}",
         serde_json::to_string(&HashMap::from([
             ("message_type", OfxStr::from_ptr(messageType).as_str(),),
