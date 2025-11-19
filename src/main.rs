@@ -1321,8 +1321,6 @@ fn read_exr(
     .channel_data
     .pixels; // Get the pixel storage we constructed
 
-    eprintln!("width: {}", width);
-
     let (x1, y1) = origin;
     let bounds = OfxRectI {
         x1,
