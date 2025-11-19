@@ -55,8 +55,9 @@ impl OfxError {
         }
     }
 
-    /// Return the OFX status code. If it's an error
-    fn get_status(&self, error_message_prefix: &str) -> OfxStatus {
+    /// Return the OFX status code. If it's an error, write a log
+    /// message.
+    fn check_status(&self, error_message_prefix: &str) -> OfxStatus {
         if self.status.failed() {
             eprintln!("{}{}", error_message_prefix, self.message);
         }

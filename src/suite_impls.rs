@@ -390,7 +390,7 @@ extern "C" fn propGetPointer(
     properties
         .with_object(|props| {
             get_property(value, props, OfxStr::from_ptr(property), index as usize)
-                .get_status("propGetPointer: ")
+                .check_status("propGetPointer: ")
         })
         .into()
 }
@@ -404,7 +404,7 @@ extern "C" fn propGetString(
     properties
         .with_object(|props| {
             get_property(value, props, OfxStr::from_ptr(property), index as usize)
-                .get_status("propGetString: ")
+                .check_status("propGetString: ")
         })
         .into()
 }
@@ -418,7 +418,7 @@ extern "C" fn propGetDouble(
     properties
         .with_object(|props| {
             get_property(value, props, OfxStr::from_ptr(property), index as usize)
-                .get_status("propGetDouble: ")
+                .check_status("propGetDouble: ")
         })
         .into()
 }
@@ -432,7 +432,7 @@ extern "C" fn propGetInt(
     properties
         .with_object(|props| {
             get_property(value, props, OfxStr::from_ptr(property), index as usize)
-                .get_status("propGetInt: ")
+                .check_status("propGetInt: ")
         })
         .into()
 }
@@ -447,7 +447,7 @@ extern "C" fn propGetPointerN(
     properties
         .with_object(|props| {
             get_property_array(value, props, OfxStr::from_ptr(property), count as usize)
-                .get_status("propGetPointerN: ")
+                .check_status("propGetPointerN: ")
         })
         .into()
 }
@@ -462,7 +462,7 @@ extern "C" fn propGetStringN(
     properties
         .with_object(|props| {
             get_property_array(value, props, OfxStr::from_ptr(property), count as usize)
-                .get_status("propGetStringN: ")
+                .check_status("propGetStringN: ")
         })
         .into()
 }
@@ -477,7 +477,7 @@ extern "C" fn propGetDoubleN(
     properties
         .with_object(|props| {
             get_property_array(value, props, OfxStr::from_ptr(property), count as usize)
-                .get_status("propGetDoubleN: ")
+                .check_status("propGetDoubleN: ")
         })
         .into()
 }
@@ -492,7 +492,7 @@ extern "C" fn propGetIntN(
     properties
         .with_object(|props| {
             get_property_array(value, props, OfxStr::from_ptr(property), count as usize)
-                .get_status("propGetIntN: ")
+                .check_status("propGetIntN: ")
         })
         .into()
 }
