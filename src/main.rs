@@ -13,8 +13,10 @@ use std::env;
 use std::error::Error;
 use std::ffi::{c_char, c_int, c_void, CString};
 use std::fs;
+use std::fs::File;
+use std::io::Write;
 use std::string::String;
-use std::sync::{LazyLock, Mutex};
+use std::sync::{Arc, LazyLock, Mutex, OnceLock};
 use std::thread;
 
 mod commands;
@@ -36,14 +38,37 @@ impl_handle!(ParamHandle, OfxParamHandle, Param);
 
 type GenericResult = Result<()>;
 
+static ERROR_FILE: OnceLock<Arc<File>> = OnceLock::new();
+fn write_error(message: &str) {
+    if let Some(file) = ERROR_FILE.get() {
+        // We can't get a mutable reference to the file, but we can
+        // write to an Arc<File> as long as the Arc itself is mutable.
+        let mut f: Arc<File> = file.clone();
+        writeln!(f, "{}", message).unwrap();
+    } else {
+        eprintln!("{}", message);
+    }
+}
 macro_rules! log_error {
     ($($tts:tt)*) => {
-        eprintln!($($tts)*);
+        crate::write_error(&format!($($tts)*));
+    }
+}
+
+static OUTPUT_FILE: OnceLock<Arc<File>> = OnceLock::new();
+fn write_output(message: &str) {
+    if let Some(file) = OUTPUT_FILE.get() {
+        // We can't get a mutable reference to the file, but we can
+        // write to an Arc<File> as long as the Arc itself is mutable.
+        let mut f: Arc<File> = file.clone();
+        writeln!(f, "{}", message).unwrap();
+    } else {
+        println!("{}", message);
     }
 }
 macro_rules! output {
     ($($tts:tt)*) => {
-        println!($($tts)*);
+        crate::write_output(&format!($($tts)*));
     }
 }
 pub(crate) use {log_error, output};
@@ -2241,6 +2266,12 @@ fn read_commands(path: &str) -> Result<Vec<Command>> {
 struct Cli {
     #[command(subcommand)]
     command: CliCommands,
+    #[arg(long, value_name = "FILE")]
+    /// Write errors here
+    errors: Option<String>,
+    #[arg(short, long, value_name = "FILE")]
+    /// Write output here
+    output: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -2373,7 +2404,33 @@ fn main() {
         instances: HashMap::new(),
     };
 
-    let commands = match Cli::parse().command {
+    let args = Cli::parse();
+
+    // Maybe open a file for errors
+    if let Some(ref filename) = args.errors {
+        let file = File::create(&filename).unwrap_or_else(|err| {
+            eprintln!("Failed to open \"{}\" for writing: {}", filename, err);
+            std::process::exit(-1);
+        });
+        ERROR_FILE.get_or_init(|| file.into());
+    }
+
+    // Maybe open a file for output
+    if let Some(ref filename) = args.output {
+        // If errors are going to the same file, use the already open
+        // file
+        if args.output == args.errors {
+            OUTPUT_FILE.get_or_init(|| ERROR_FILE.get().unwrap().clone());
+        } else {
+            let file = File::create(&filename).unwrap_or_else(|err| {
+                eprintln!("Failed to open \"{}\" for writing: {}", filename, err);
+                std::process::exit(-1);
+            });
+            OUTPUT_FILE.get_or_init(|| file.into());
+        }
+    }
+
+    let commands = match args.command {
         // Run ListPlugins on the given bundle
         CliCommands::List { bundle_name } => vec![Command::ListPlugins {
             bundle_name: bundle_name.clone(),
