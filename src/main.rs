@@ -470,10 +470,16 @@ enum ClipImages {
     NoImage,
     Static(Image),
     Sequence(HashMap<FrameNumber, Image>),
+    LazySequence {
+        images: HashMap<FrameNumber, Image>,
+        name: &'static str,
+        bounds: OfxRectI,
+        rowbytes: Option<usize>,
+    },
 }
 
 impl ClipImages {
-    fn image_at_time(&self, time: OfxTime) -> Option<&Image> {
+    fn image_at_time(&mut self, time: OfxTime) -> Option<&Image> {
         if time.0 >= 0.0 {
             self.image_at_frame(FrameNumber(time.0 as u32))
         } else {
@@ -481,11 +487,30 @@ impl ClipImages {
         }
     }
 
-    fn image_at_frame(&self, frame: FrameNumber) -> Option<&Image> {
+    fn image_at_frame(&mut self, frame: FrameNumber) -> Option<&Image> {
         match self {
             ClipImages::Static(image) => Some(image),
             ClipImages::Sequence(m) => m.get(&frame),
+            ClipImages::LazySequence {
+                images,
+                name,
+                bounds,
+                rowbytes,
+            } => Some(
+                images
+                    .entry(frame)
+                    .or_insert_with(|| Image::empty(name, bounds, *rowbytes)),
+            ),
             ClipImages::NoImage => None,
+        }
+    }
+
+    // Remove and return an image from a LazySequence. Returns None
+    // for other variants.
+    fn take_image_at_frame(&mut self, frame: FrameNumber) -> Option<Image> {
+        match self {
+            ClipImages::LazySequence { images, .. } => images.remove(&frame),
+            _ => None,
         }
     }
 }
@@ -513,6 +538,9 @@ impl Clip {
         self.images = ClipImages::Static(image);
     }
 
+    // Note: no longer used, but could be useful if we implement image
+    // sequences for inputs.
+    #[allow(dead_code)]
     fn set_images(
         &mut self,
         width: usize,
@@ -528,7 +556,7 @@ impl Clip {
         self.images = ClipImages::Sequence(images);
     }
 
-    fn get_image_handle_at_time(&self, time: OfxTime) -> Option<PropertySetHandle> {
+    fn get_image_handle_at_time(&mut self, time: OfxTime) -> Option<PropertySetHandle> {
         // clipGetImage is supposed to return a unique handle for each
         // call, which must be released by the plugin. Since our
         // handles are pointers to the underlying objects, we must
@@ -1278,8 +1306,6 @@ fn create_images(
     project_dims: Property,
     output_rect: &OfxRectI,
     output_rowbytes: Option<usize>,
-    frame_min: u32,
-    frame_limit: u32,
 ) -> GenericResult {
     effect.properties.lock().values.insert(
         constants::ImageEffectPropProjectSize.to_string(),
@@ -1295,18 +1321,12 @@ fn create_images(
     }
     let mut output = effect.get_clip("Output")?.lock();
 
-    output.set_images(
-        output_rect.width(),
-        output_rect.height(),
-        (frame_min..frame_limit)
-            .map(|f| {
-                (
-                    FrameNumber(f),
-                    Image::empty("Output", output_rect, output_rowbytes),
-                )
-            })
-            .collect(),
-    );
+    output.images = ClipImages::LazySequence {
+        images: HashMap::new(),
+        name: "Output",
+        bounds: *output_rect,
+        rowbytes: output_rowbytes,
+    };
     Ok(())
 }
 
@@ -1631,6 +1651,23 @@ fn get_input_image(name: &str, input: &Input) -> Result<Image> {
     read_exr(name, &input.filename, input.rowbytes, input.origin)
 }
 
+fn write_image(
+    output_directory: Option<&String>,
+    frame_limit: u32,
+    frame: u32,
+    image: Image,
+) -> GenericResult {
+    if let Some(output_directory) = output_directory {
+        let format_width = (frame_limit.ilog10() + 1) as usize;
+
+        write_exr(
+            &format!("{output_directory}/{frame:0format_width$}.exr"),
+            image,
+        )?;
+    }
+    Ok(())
+}
+
 fn render(
     instance_name: &str,
     inputs: &HashMap<String, Input>,
@@ -1640,6 +1677,11 @@ fn render(
     thread_count: u32,
     state: &mut CommandState,
 ) -> GenericResult {
+    // Create output directory
+    if let Some(output_directory) = output_directory {
+        std::fs::create_dir_all(output_directory)?;
+    }
+
     let (FrameNumber(frame_min), FrameNumber(frame_limit)) = frame_range;
     if frame_limit <= frame_min {
         bail!(format!("Invalid frame range {frame_min}..{frame_limit}"));
@@ -1693,8 +1735,6 @@ fn render(
         project_dims.into(),
         &output_rect,
         layout.and_then(|l| l.rowbytes),
-        frame_min,
-        frame_limit,
     )?;
 
     instance.effect.lock().check_required_inputs()?;
@@ -1734,9 +1774,26 @@ fn render(
                 PropertySetHandle::from(render_inargs.clone()),
                 PropertySetHandle::from(std::ptr::null_mut()),
             )?;
+
+            write_image(
+                output_directory,
+                frame_limit,
+                frame,
+                instance
+                    .effect
+                    .lock()
+                    .clips
+                    .get("Output")
+                    .unwrap()
+                    .lock()
+                    .images
+                    .take_image_at_frame(FrameNumber(frame))
+                    .unwrap(),
+            )?;
         }
         Ok(())
     };
+
     if thread_count <= 1 {
         render_range(frame_min, frame_limit)?;
     } else {
@@ -1758,32 +1815,12 @@ fn render(
                 t.join().unwrap()?;
             }
             Ok(())
-        })?
+        })?;
     }
 
     // Check after all renders are finished
     Clip::check_for_unreleased_images();
 
-    if let Some(output_directory) = output_directory {
-        std::fs::create_dir_all(output_directory)?;
-        for frame in frame_min..frame_limit {
-            let format_width = (frame_limit.ilog10() + 1) as usize;
-            write_exr(
-                &format!("{output_directory}/{frame:0format_width$}.exr"),
-                instance
-                    .effect
-                    .lock()
-                    .clips
-                    .get("Output")
-                    .unwrap()
-                    .lock()
-                    .images
-                    .image_at_frame(FrameNumber(frame))
-                    .unwrap()
-                    .clone(),
-            )?;
-        }
-    }
     Ok(())
 }
 
@@ -2202,7 +2239,7 @@ fn process_command(command: &Command, state: &mut CommandState) -> GenericResult
             *thread_count,
             state,
         )
-        .context("RenderFilter"),
+        .context("Render"),
         PrintParams { instance_name } => {
             print_params(instance_name, state).context("PrintParams")
         }
