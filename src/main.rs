@@ -38,6 +38,11 @@ impl_handle!(ParamHandle, OfxParamHandle, Param);
 
 type GenericResult = Result<()>;
 
+static VERBOSE: OnceLock<bool> = OnceLock::new();
+fn verbose() -> bool {
+    *VERBOSE.get_or_init(|| false)
+}
+
 static ERROR_FILE: OnceLock<Arc<File>> = OnceLock::new();
 fn write_error(message: &str) {
     if let Some(file) = ERROR_FILE.get() {
@@ -95,7 +100,7 @@ impl OfxError {
     /// Return the OFX status code. If it's an error, write a log
     /// message.
     fn check_status(&self, error_message_prefix: &str) -> OfxStatus {
-        if self.status.failed() {
+        if verbose() && self.status.failed() {
             log_error!("{}{}", error_message_prefix, self.message);
         }
         self.status
@@ -1163,7 +1168,9 @@ extern "C" fn fetch_suite(
             &suite_impls::MESSAGE_SUITE as *const _ as *const c_void
         }
         _ => {
-            log_error!("fetch_suite: {} v{} is not available", suite, version);
+            if verbose() {
+                log_error!("fetch_suite: {} v{} is not available", suite, version);
+            }
             std::ptr::null()
         }
     }
@@ -2272,6 +2279,9 @@ struct Cli {
     #[arg(short, long, value_name = "FILE")]
     /// Write output here
     output: Option<String>,
+    #[arg(short, long)]
+    /// Enable verbose output
+    verbose: bool,
 }
 
 #[derive(Subcommand)]
@@ -2405,6 +2415,8 @@ fn main() {
     };
 
     let args = Cli::parse();
+
+    VERBOSE.get_or_init(|| args.verbose);
 
     // Maybe open a file for errors
     if let Some(ref filename) = args.errors {
