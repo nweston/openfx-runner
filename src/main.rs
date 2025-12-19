@@ -2431,7 +2431,15 @@ fn main() {
             ),
             (
                 constants::ImageEffectPropSupportedContexts,
-                constants::ImageEffectContextFilter.into(),
+                [
+                    constants::ImageEffectContextFilter,
+                    constants::ImageEffectContextGeneral,
+                    constants::ImageEffectContextGenerator,
+                    constants::ImageEffectContextPaint,
+                    constants::ImageEffectContextRetimer,
+                    constants::ImageEffectContextTransition,
+                ]
+                .into(),
             ),
             (
                 constants::ImageEffectPropSupportedPixelDepths,
