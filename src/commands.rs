@@ -12,7 +12,7 @@ pub enum MessageSuiteResponses {
     Failed,
 }
 
-#[derive(Deserialize, Serialize, Copy, Clone)]
+#[derive(clap::ValueEnum, Deserialize, Serialize, Copy, Clone)]
 pub enum ImageEffectContext {
     Filter,
     General,
@@ -102,10 +102,11 @@ pub enum Command {
         bundle_name: String,
         plugin_name: String,
     },
-    /// Describe plugin in filter context and print results
-    DescribeFilter {
+    /// Describe plugin in given context and print results
+    DescribeInContext {
         bundle_name: String,
         plugin_name: String,
+        context: ImageEffectContext,
     },
     PrintRoIs {
         instance_name: String,

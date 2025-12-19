@@ -2089,9 +2089,10 @@ fn describe(
     Ok(plugin.descriptor.lock().clone())
 }
 
-fn describe_filter(
+fn describe_in_context(
     bundle_name: &str,
     plugin_name: &str,
+    context: ImageEffectContext,
     state: &mut CommandState,
 ) -> GenericResult {
     describe(bundle_name, plugin_name, state)?;
@@ -2116,7 +2117,7 @@ fn describe_filter(
         "filter_inargs",
         &[(
             constants::ImageEffectPropContext,
-            constants::ImageEffectContextFilter.into(),
+            image_effect_context_str(context).into(),
         )],
     )
     .into_object();
@@ -2264,10 +2265,12 @@ fn process_command(command: &Command, state: &mut CommandState) -> GenericResult
             output!("{}", serde_json::to_string(&*effect.properties.lock())?);
             Ok(())
         }
-        DescribeFilter {
+        DescribeInContext {
             bundle_name,
             plugin_name,
-        } => describe_filter(bundle_name, plugin_name, state).context("DescribeFilter"),
+            context,
+        } => describe_in_context(bundle_name, plugin_name, *context, state)
+            .context("DescribeFilter"),
         PrintRoIs {
             instance_name,
             region_of_interest,
@@ -2330,10 +2333,11 @@ enum CliCommands {
         bundle_name: String,
         plugin_name: String,
     },
-    /// DescribeInContext with filter context
-    DescribeFilter {
+    /// DescribeInContext with the given context
+    DescribeInContext {
         bundle_name: String,
         plugin_name: String,
+        context: ImageEffectContext,
     },
     /// Run commands from a JSON file
     Run { command_file: String },
@@ -2491,12 +2495,14 @@ fn main() {
             bundle_name: bundle_name.clone(),
             plugin_name: plugin_name.clone(),
         }],
-        CliCommands::DescribeFilter {
+        CliCommands::DescribeInContext {
             bundle_name,
             plugin_name,
-        } => vec![Command::DescribeFilter {
+            context,
+        } => vec![Command::DescribeInContext {
             bundle_name: bundle_name.clone(),
             plugin_name: plugin_name.clone(),
+            context,
         }],
         // Otherwise read commands from file
         CliCommands::Run { ref command_file } => read_commands(command_file)
