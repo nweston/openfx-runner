@@ -806,7 +806,7 @@ impl Serialize for PropertyValue {
         match &self {
             PropertyValue::Pointer(_) => serializer.serialize_str("<pointer>"),
             PropertyValue::String(s) => {
-                serializer.serialize_str(OfxStr::from_ptr(s.as_ptr()).as_str())
+                serializer.serialize_str(unsafe { OfxStr::from_ptr(s.as_ptr()) }.as_str())
             }
             PropertyValue::Double(v) => serializer.serialize_f64(*v),
             PropertyValue::Int(v) => serializer.serialize_i32(*v),
@@ -848,7 +848,7 @@ impl From<OfxStr<'_>> for PropertyValue {
 
 impl From<*const c_char> for PropertyValue {
     fn from(s: *const c_char) -> Self {
-        OfxStr::from_ptr(s).into()
+        unsafe { OfxStr::from_ptr(s) }.into()
     }
 }
 
@@ -1168,7 +1168,7 @@ extern "C" fn fetch_suite(
     name: *const c_char,
     version: c_int,
 ) -> *const c_void {
-    let suite = OfxStr::from_ptr(name);
+    let suite = unsafe { OfxStr::from_ptr(name) };
     #[allow(non_upper_case_globals)]
     match suite {
         constants::ImageEffectSuite => {

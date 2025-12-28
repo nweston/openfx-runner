@@ -53,7 +53,7 @@ extern "C" fn clipDefine(
 ) -> OfxStatus {
     let props = imageEffect.with_object(|effect| {
         effect
-            .create_clip(OfxStr::from_ptr(name))
+            .create_clip(unsafe { OfxStr::from_ptr(name) })
             .lock()
             .properties
             .clone()
@@ -75,7 +75,8 @@ extern "C" fn clipGetHandle(
 ) -> OfxStatus {
     imageEffect
         .with_object(|effect| {
-            if let Some(c) = effect.clips.get(OfxStr::from_ptr(name).as_str()) {
+            if let Some(c) = effect.clips.get(unsafe { OfxStr::from_ptr(name) }.as_str())
+            {
                 unsafe {
                     *clip = c.to_handle().into();
                     if !propertySet.is_null() {
@@ -241,7 +242,11 @@ fn set_property(
     value: PropertyValue,
 ) -> OfxStatus {
     properties.with_object(|props| {
-        props.set(OfxStr::from_ptr(name).as_str(), index as usize, value)
+        props.set(
+            unsafe { OfxStr::from_ptr(name) }.as_str(),
+            index as usize,
+            value,
+        )
     });
     ofxstatus::OK.into()
 }
@@ -391,8 +396,13 @@ extern "C" fn propGetPointer(
 ) -> OfxStatus {
     properties
         .with_object(|props| {
-            get_property(value, props, OfxStr::from_ptr(property), index as usize)
-                .check_status("propGetPointer: ")
+            get_property(
+                value,
+                props,
+                unsafe { OfxStr::from_ptr(property) },
+                index as usize,
+            )
+            .check_status("propGetPointer: ")
         })
         .into()
 }
@@ -405,8 +415,13 @@ extern "C" fn propGetString(
 ) -> OfxStatus {
     properties
         .with_object(|props| {
-            get_property(value, props, OfxStr::from_ptr(property), index as usize)
-                .check_status("propGetString: ")
+            get_property(
+                value,
+                props,
+                unsafe { OfxStr::from_ptr(property) },
+                index as usize,
+            )
+            .check_status("propGetString: ")
         })
         .into()
 }
@@ -419,8 +434,13 @@ extern "C" fn propGetDouble(
 ) -> OfxStatus {
     properties
         .with_object(|props| {
-            get_property(value, props, OfxStr::from_ptr(property), index as usize)
-                .check_status("propGetDouble: ")
+            get_property(
+                value,
+                props,
+                unsafe { OfxStr::from_ptr(property) },
+                index as usize,
+            )
+            .check_status("propGetDouble: ")
         })
         .into()
 }
@@ -433,8 +453,13 @@ extern "C" fn propGetInt(
 ) -> OfxStatus {
     properties
         .with_object(|props| {
-            get_property(value, props, OfxStr::from_ptr(property), index as usize)
-                .check_status("propGetInt: ")
+            get_property(
+                value,
+                props,
+                unsafe { OfxStr::from_ptr(property) },
+                index as usize,
+            )
+            .check_status("propGetInt: ")
         })
         .into()
 }
@@ -448,8 +473,13 @@ extern "C" fn propGetPointerN(
 ) -> OfxStatus {
     properties
         .with_object(|props| {
-            get_property_array(value, props, OfxStr::from_ptr(property), count as usize)
-                .check_status("propGetPointerN: ")
+            get_property_array(
+                value,
+                props,
+                unsafe { OfxStr::from_ptr(property) },
+                count as usize,
+            )
+            .check_status("propGetPointerN: ")
         })
         .into()
 }
@@ -463,8 +493,13 @@ extern "C" fn propGetStringN(
 ) -> OfxStatus {
     properties
         .with_object(|props| {
-            get_property_array(value, props, OfxStr::from_ptr(property), count as usize)
-                .check_status("propGetStringN: ")
+            get_property_array(
+                value,
+                props,
+                unsafe { OfxStr::from_ptr(property) },
+                count as usize,
+            )
+            .check_status("propGetStringN: ")
         })
         .into()
 }
@@ -478,8 +513,13 @@ extern "C" fn propGetDoubleN(
 ) -> OfxStatus {
     properties
         .with_object(|props| {
-            get_property_array(value, props, OfxStr::from_ptr(property), count as usize)
-                .check_status("propGetDoubleN: ")
+            get_property_array(
+                value,
+                props,
+                unsafe { OfxStr::from_ptr(property) },
+                count as usize,
+            )
+            .check_status("propGetDoubleN: ")
         })
         .into()
 }
@@ -493,8 +533,13 @@ extern "C" fn propGetIntN(
 ) -> OfxStatus {
     properties
         .with_object(|props| {
-            get_property_array(value, props, OfxStr::from_ptr(property), count as usize)
-                .check_status("propGetIntN: ")
+            get_property_array(
+                value,
+                props,
+                unsafe { OfxStr::from_ptr(property) },
+                count as usize,
+            )
+            .check_status("propGetIntN: ")
         })
         .into()
 }
@@ -512,7 +557,7 @@ extern "C" fn propGetDimension(
     property: *const c_char,
     count: *mut c_int,
 ) -> OfxStatus {
-    let key = OfxStr::from_ptr(property);
+    let key = unsafe { OfxStr::from_ptr(property) };
     properties
         .with_object(|props| {
             if let Some(values) = props.values.get(key.as_str()) {
@@ -556,7 +601,9 @@ extern "C" fn paramDefine(
     propertySet: *mut openfx_rs::types::OfxPropertySetHandle,
 ) -> OfxStatus {
     let props = paramSet.with_object(|p| {
-        p.create_param(OfxStr::from_ptr(paramType), OfxStr::from_ptr(name))
+        p.create_param(unsafe { OfxStr::from_ptr(paramType) }, unsafe {
+            OfxStr::from_ptr(name)
+        })
     });
     unsafe { *propertySet = props.into() }
     ofxstatus::OK.into()
@@ -571,7 +618,7 @@ extern "C" fn paramGetHandle(
 ) -> OfxStatus {
     paramSet
         .with_object(|ps| {
-            if let Some(p) = ps.params.get(OfxStr::from_ptr(name).as_str()) {
+            if let Some(p) = ps.params.get(unsafe { OfxStr::from_ptr(name) }.as_str()) {
                 unsafe {
                     *param = p.to_handle().into();
                     if !propertySet.is_null() {
@@ -891,14 +938,17 @@ extern "C" fn message_impl(
     let id_str = if messageId.is_null() {
         OfxStr::from_str("(null)\0")
     } else {
-        OfxStr::from_ptr(messageId)
+        unsafe { OfxStr::from_ptr(messageId) }
     };
     output!(
         "{}",
         serde_json::to_string(&HashMap::from([
-            ("message_type", OfxStr::from_ptr(messageType).as_str(),),
+            (
+                "message_type",
+                unsafe { OfxStr::from_ptr(messageType) }.as_str(),
+            ),
             ("message_id", id_str.as_str()),
-            ("message", OfxStr::from_ptr(message).as_str())
+            ("message", unsafe { OfxStr::from_ptr(message) }.as_str())
         ]))
         .unwrap()
     );
