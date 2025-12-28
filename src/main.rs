@@ -1108,10 +1108,7 @@ impl PropertySet {
     }
 
     fn set(&mut self, key: &str, index: usize, value: PropertyValue) {
-        let prop = self
-            .values
-            .entry(key.to_string())
-            .or_insert(Default::default());
+        let prop = self.values.entry(key.to_string()).or_default();
         if index >= prop.0.len() {
             prop.0.resize_with(index + 1, || PropertyValue::Unset)
         }
@@ -1372,12 +1369,7 @@ fn read_exr(
             // Flip y and convert to flat index
             let index = (height - 1 - position.y()) * get_image_stride(width, rowbytes)
                 + position.x();
-            pixels[index] = Pixel {
-                r: r,
-                g: g,
-                b: b,
-                a: a,
-            };
+            pixels[index] = Pixel { r, g, b, a };
         },
     )
     .with_context(|| format!("Read EXR \"{}\"", path))?
@@ -1438,7 +1430,7 @@ struct CommandState<'a> {
     instances: HashMap<String, Instance>,
 }
 
-impl<'a> CommandState<'a> {
+impl CommandState<'_> {
     fn get_plugin(&self, name: &str) -> Result<&LoadedPlugin> {
         self.plugins
             .get(name)
@@ -1691,7 +1683,7 @@ fn render(
     let plugin = state.get_plugin(&instance.plugin_name)?;
 
     let input_images = inputs
-        .into_iter()
+        .iter()
         .map(|(name, input)| {
             get_input_image(name, input).map(|image| (name.clone(), image))
         })
@@ -1877,7 +1869,7 @@ fn get_rois_for_instance(
         .clips
         .keys()
         .filter(|c| *c != "Output")
-        .map(|c| c.clone())
+        .cloned()
         .collect();
 
     let roi_props: Vec<_> = clips
@@ -1889,7 +1881,7 @@ fn get_rois_for_instance(
         "getRoI_outargs",
         roi_props
             .iter()
-            .map(|p| (OfxStr::from_str(&p), region_of_interest.into()))
+            .map(|p| (OfxStr::from_str(p), region_of_interest.into()))
             .collect::<Vec<_>>()
             .as_slice(),
     )
@@ -1997,7 +1989,7 @@ fn get_rod_for_instance(
 
     let out = outargs.lock();
     // Ok(out.get_rectd(roi_prop)?)
-    Ok(out.get_rectd(constants::ImageEffectPropRegionOfDefinition)?)
+    out.get_rectd(constants::ImageEffectPropRegionOfDefinition)
 }
 
 fn set_params(
@@ -2469,7 +2461,7 @@ fn main() {
 
     // Maybe open a file for errors
     if let Some(ref filename) = args.errors {
-        let file = File::create(&filename).unwrap_or_else(|err| {
+        let file = File::create(filename).unwrap_or_else(|err| {
             eprintln!("Failed to open \"{}\" for writing: {}", filename, err);
             std::process::exit(-1);
         });
@@ -2483,7 +2475,7 @@ fn main() {
         if args.output == args.errors {
             OUTPUT_FILE.get_or_init(|| ERROR_FILE.get().unwrap().clone());
         } else {
-            let file = File::create(&filename).unwrap_or_else(|err| {
+            let file = File::create(filename).unwrap_or_else(|err| {
                 eprintln!("Failed to open \"{}\" for writing: {}", filename, err);
                 std::process::exit(-1);
             });

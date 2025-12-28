@@ -33,7 +33,7 @@ extern "C" fn getPropertySet(
         *propHandle =
             imageEffect.with_object(|effect| effect.properties.to_handle().into())
     };
-    ofxstatus::OK.into()
+    ofxstatus::OK
 }
 
 extern "C" fn getParamSet(
@@ -43,7 +43,7 @@ extern "C" fn getParamSet(
     unsafe {
         *paramSet = imageEffect.with_object(|effect| effect.param_set.to_handle().into())
     };
-    ofxstatus::OK.into()
+    ofxstatus::OK
 }
 
 extern "C" fn clipDefine(
@@ -63,7 +63,7 @@ extern "C" fn clipDefine(
             *propertySet = props.to_handle().into();
         }
     }
-    ofxstatus::OK.into()
+    ofxstatus::OK
 }
 
 #[allow(unused_variables)]
@@ -88,7 +88,6 @@ extern "C" fn clipGetHandle(
                 ofxstatus::ErrUnknown
             }
         })
-        .into()
 }
 
 #[allow(unused_variables)]
@@ -100,7 +99,7 @@ extern "C" fn clipGetPropertySet(
         let handle = c.properties.to_handle().into();
         unsafe { *propHandle = handle }
     });
-    ofxstatus::OK.into()
+    ofxstatus::OK
 }
 
 #[allow(unused_variables)]
@@ -120,7 +119,6 @@ extern "C" fn clipGetImage(
             ofxstatus::Failed
         }
     })
-    .into()
 }
 
 #[allow(unused_variables)]
@@ -128,7 +126,7 @@ extern "C" fn clipReleaseImage(
     imageHandle: openfx_rs::types::OfxPropertySetHandle,
 ) -> OfxStatus {
     Clip::release_image_handle(imageHandle.into());
-    ofxstatus::OK.into()
+    ofxstatus::OK
 }
 
 #[allow(unused_variables)]
@@ -147,12 +145,11 @@ extern "C" fn clipGetRegionOfDefinition(
             ofxstatus::Failed
         }
     })
-    .into()
 }
 
 #[allow(unused_variables)]
 extern "C" fn abort(imageEffect: openfx_rs::types::OfxImageEffectHandle) -> c_int {
-    return 0;
+    0
 }
 
 #[allow(unused_variables)]
@@ -180,12 +177,12 @@ extern "C" fn imageMemoryAlloc(
         {
             let mut ptr: *mut c_void = std::ptr::null_mut();
             if posix_memalign(&mut ptr, 16, nBytes) != 0 {
-                return ofxstatus::ErrMemory.into();
+                return ofxstatus::ErrMemory;
             }
             *memoryHandle = openfx_rs::types::OfxImageMemoryHandle(ptr as _);
         }
     };
-    ofxstatus::OK.into()
+    ofxstatus::OK
 }
 
 #[allow(unused_variables)]
@@ -195,7 +192,7 @@ extern "C" fn imageMemoryFree(
     unsafe {
         free(memoryHandle.0 as _);
     };
-    ofxstatus::OK.into()
+    ofxstatus::OK
 }
 
 #[allow(unused_variables)]
@@ -208,14 +205,14 @@ extern "C" fn imageMemoryLock(
     unsafe {
         *returnedPtr = memoryHandle.0 as _;
     }
-    ofxstatus::OK.into()
+    ofxstatus::OK
 }
 #[allow(unused_variables)]
 extern "C" fn imageMemoryUnlock(
     memoryHandle: openfx_rs::types::OfxImageMemoryHandle,
 ) -> OfxStatus {
     // Nothing to do
-    ofxstatus::OK.into()
+    ofxstatus::OK
 }
 
 pub const IMAGE_EFFECT_SUITE: OfxImageEffectSuiteV1 = OfxImageEffectSuiteV1 {
@@ -248,7 +245,7 @@ fn set_property(
             value,
         )
     });
-    ofxstatus::OK.into()
+    ofxstatus::OK
 }
 
 fn set_property_n<T: Into<PropertyValue> + Copy>(
@@ -261,7 +258,7 @@ fn set_property_n<T: Into<PropertyValue> + Copy>(
     for (i, v) in s.iter().enumerate() {
         set_property(properties, name, i as i32, (*v).into());
     }
-    ofxstatus::OK.into()
+    ofxstatus::OK
 }
 
 extern "C" fn propSetPointer(
@@ -380,7 +377,7 @@ fn get_property_array<T: FromProperty>(
     count: usize,
 ) -> OfxError {
     for i in 0..count {
-        let result = get_property(unsafe { value.offset(i as isize) }, props, key, i);
+        let result = get_property(unsafe { value.add(i) }, props, key, i);
         if result.status.failed() {
             return result;
         }
@@ -404,7 +401,6 @@ extern "C" fn propGetPointer(
             )
             .check_status("propGetPointer: ")
         })
-        .into()
 }
 
 extern "C" fn propGetString(
@@ -423,7 +419,6 @@ extern "C" fn propGetString(
             )
             .check_status("propGetString: ")
         })
-        .into()
 }
 
 extern "C" fn propGetDouble(
@@ -442,7 +437,6 @@ extern "C" fn propGetDouble(
             )
             .check_status("propGetDouble: ")
         })
-        .into()
 }
 
 extern "C" fn propGetInt(
@@ -461,7 +455,6 @@ extern "C" fn propGetInt(
             )
             .check_status("propGetInt: ")
         })
-        .into()
 }
 
 #[allow(unused_variables)]
@@ -481,7 +474,6 @@ extern "C" fn propGetPointerN(
             )
             .check_status("propGetPointerN: ")
         })
-        .into()
 }
 
 #[allow(unused_variables)]
@@ -501,7 +493,6 @@ extern "C" fn propGetStringN(
             )
             .check_status("propGetStringN: ")
         })
-        .into()
 }
 
 #[allow(unused_variables)]
@@ -521,7 +512,6 @@ extern "C" fn propGetDoubleN(
             )
             .check_status("propGetDoubleN: ")
         })
-        .into()
 }
 
 #[allow(unused_variables)]
@@ -541,7 +531,6 @@ extern "C" fn propGetIntN(
             )
             .check_status("propGetIntN: ")
         })
-        .into()
 }
 
 #[allow(unused_variables)]
@@ -568,7 +557,6 @@ extern "C" fn propGetDimension(
                 ofxstatus::ErrUnknown
             }
         })
-        .into()
 }
 
 pub const PROPERTY_SUITE: OfxPropertySuiteV1 = OfxPropertySuiteV1 {
@@ -606,7 +594,7 @@ extern "C" fn paramDefine(
         })
     });
     unsafe { *propertySet = props.into() }
-    ofxstatus::OK.into()
+    ofxstatus::OK
 }
 
 #[allow(unused_variables)]
@@ -630,7 +618,6 @@ extern "C" fn paramGetHandle(
                 ofxstatus::ErrUnknown
             }
         })
-        .into()
 }
 
 extern "C" fn paramSetGetPropertySet(
@@ -638,7 +625,7 @@ extern "C" fn paramSetGetPropertySet(
     propHandle: *mut openfx_rs::types::OfxPropertySetHandle,
 ) -> OfxStatus {
     unsafe { *propHandle = paramSet.with_object(|p| p.properties.to_handle().into()) };
-    ofxstatus::OK.into()
+    ofxstatus::OK
 }
 
 #[allow(unused_variables)]
@@ -649,7 +636,7 @@ extern "C" fn paramGetPropertySet(
     paramHandle.with_object(|param| unsafe {
         *propHandle = param.properties.to_handle().into();
     });
-    ofxstatus::OK.into()
+    ofxstatus::OK
 }
 
 unsafe extern "C" {
@@ -697,7 +684,7 @@ pub extern "C" fn param_get_value_1(
         Integer(v) => unsafe { *(value as *mut c_int) = v },
         ref x => panic!("unexpected param value {:?}", x),
     });
-    ofxstatus::OK.into()
+    ofxstatus::OK
 }
 
 #[unsafe(no_mangle)]
@@ -719,7 +706,7 @@ pub extern "C" fn param_get_value_2(
         },
         ref x => panic!("unexpected param value {:?}", x),
     });
-    ofxstatus::OK.into()
+    ofxstatus::OK
 }
 
 #[unsafe(no_mangle)]
@@ -748,7 +735,7 @@ pub extern "C" fn param_get_value_3(
         },
         ref x => panic!("unexpected param value {:?}", x),
     });
-    ofxstatus::OK.into()
+    ofxstatus::OK
 }
 
 #[unsafe(no_mangle)]
@@ -769,7 +756,7 @@ pub extern "C" fn param_get_value_4(
         },
         ref x => panic!("unexpected param value {:?}", x),
     });
-    ofxstatus::OK.into()
+    ofxstatus::OK
 }
 
 #[unsafe(no_mangle)]
@@ -863,14 +850,14 @@ extern "C" fn paramDeleteKey(
     paramHandle: openfx_rs::types::OfxParamHandle,
     time: OfxTime,
 ) -> OfxStatus {
-    ofxstatus::OK.into()
+    ofxstatus::OK
 }
 
 #[allow(unused_variables)]
 extern "C" fn paramDeleteAllKeys(
     paramHandle: openfx_rs::types::OfxParamHandle,
 ) -> OfxStatus {
-    ofxstatus::OK.into()
+    ofxstatus::OK
 }
 
 #[allow(unused_variables)]
@@ -888,12 +875,12 @@ extern "C" fn paramEditBegin(
     paramSet: openfx_rs::types::OfxParamSetHandle,
     name: *const c_char,
 ) -> OfxStatus {
-    ofxstatus::OK.into()
+    ofxstatus::OK
 }
 
 #[allow(unused_variables)]
 extern "C" fn paramEditEnd(paramSet: openfx_rs::types::OfxParamSetHandle) -> OfxStatus {
-    ofxstatus::OK.into()
+    ofxstatus::OK
 }
 
 pub const PARAMETER_SUITE: OfxParameterSuiteV1 = OfxParameterSuiteV1 {
@@ -965,7 +952,6 @@ extern "C" fn message_impl(
                 .pop()
                 .unwrap_or(ofxstatus::OK)
         })
-        .into()
 }
 
 pub const MESSAGE_SUITE: OfxMessageSuiteV1 = OfxMessageSuiteV1 {
