@@ -2523,6 +2523,8 @@ fn main() {
 #[cfg(test)]
 mod test {
     use crate::*;
+    use std::env;
+    use std::path;
 
     fn bundle_from_plist(name: &str) -> Bundle {
         Bundle {
@@ -2596,17 +2598,65 @@ mod test {
         );
     }
 
+    fn lib_prefix() -> &'static str {
+        #[cfg(target_os = "linux")]
+        return "lib";
+        #[cfg(target_os = "macos")]
+        return "lib";
+        #[cfg(target_os = "windows")]
+        return "";
+    }
+
+    fn lib_suffix() -> &'static str {
+        #[cfg(target_os = "linux")]
+        return ".so";
+        #[cfg(target_os = "macos")]
+        return ".dylib";
+        #[cfg(target_os = "windows")]
+        return ".dll";
+    }
+
+    /// Get the path of an example library
+    fn example_lib_path(exe_path: &str, lib_name: &str) -> path::PathBuf {
+        let prefix = lib_prefix();
+        let suffix = lib_suffix();
+        path::Path::new(exe_path)
+            .parent()
+            .unwrap()
+            .join("..")
+            .join("examples")
+            .join(format!("{prefix}{lib_name}{suffix}"))
+    }
+
     #[test]
     fn missing_functions() {
-        let lib1 = unsafe { libloading::Library::new("test/no-functions").unwrap() };
-        assert_eq!(
-            get_plugins(&lib1).unwrap_err().to_string(),
-            "test/no-functions: undefined symbol: OfxGetNumberOfPlugins"
-        );
-        let lib2 = unsafe { libloading::Library::new("test/no-getplugin").unwrap() };
-        assert_eq!(
-            get_plugins(&lib2).unwrap_err().to_string(),
-            "test/no-getplugin: undefined symbol: OfxGetPlugin"
-        );
+        // This test uses shared libraries which are built as
+        // examples. They'll be in the cargo target directory, just
+        // like the test executable, so we can find them relative to
+        // the executable path.
+        // This is a bit of a hack but it gets the job done.
+        let args: Vec<String> = env::args().collect();
+        let exe = &args[0];
+
+        {
+            let path = example_lib_path(exe, "no_functions");
+            let lib = unsafe { libloading::Library::new(&path).unwrap() };
+            assert_eq!(
+                get_plugins(&lib).unwrap_err().to_string(),
+                format!(
+                    "{}: undefined symbol: OfxGetNumberOfPlugins",
+                    path.display()
+                )
+            );
+        }
+
+        {
+            let path = example_lib_path(exe, "no_getplugin");
+            let lib = unsafe { libloading::Library::new(&path).unwrap() };
+            assert_eq!(
+                get_plugins(&lib).unwrap_err().to_string(),
+                format!("{}: undefined symbol: OfxGetPlugin", path.display())
+            );
+        }
     }
 }

@@ -3,7 +3,16 @@ name = "openfx-runner"
 version = "0.1.0"
 edition = "2024"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[[example]]
+name = "no_functions"
+path = "examples/no_functions.rs"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "no_getplugin"
+path = "examples/no_getplugin.rs"
+crate-type = ["cdylib"]
 
 [dependencies]
 clap = { version = "4.4.12", features = ["derive"] }
