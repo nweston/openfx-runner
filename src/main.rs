@@ -1211,7 +1211,11 @@ fn get_plugins(lib: &libloading::Library) -> Result<Vec<Plugin>> {
             unsafe extern "C" fn(i32) -> *const OfxPlugin,
         > = lib.get(b"OfxGetPlugin")?;
         for i in 0..count {
-            let p = &*get_plugin(i);
+            let raw = get_plugin(i);
+            if raw.is_null() {
+                bail!("OfxGetPlugin returned null for plugin {}", i);
+            }
+            let p = &*raw;
             let api = OfxStr::from_ptr(p.pluginApi);
             if api != constants::ImageEffectPluginApi {
                 bail!(
@@ -2626,6 +2630,18 @@ mod test {
             .join("..")
             .join("examples")
             .join(format!("{prefix}{lib_name}{suffix}"))
+    }
+
+    #[test]
+    fn null_plugin() {
+        let args: Vec<String> = env::args().collect();
+        let exe = &args[0];
+        let path = example_lib_path(exe, "null_plugin");
+        let lib = unsafe { libloading::Library::new(&path).unwrap() };
+        assert_eq!(
+            get_plugins(&lib).unwrap_err().to_string(),
+            "OfxGetPlugin returned null for plugin 0"
+        );
     }
 
     #[test]
