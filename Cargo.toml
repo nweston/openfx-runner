@@ -19,6 +19,11 @@ name = "null_plugin"
 path = "examples/null_plugin.rs"
 crate-type = ["cdylib"]
 
+[[example]]
+name = "basic"
+path = "examples/basic.rs"
+crate-type = ["cdylib"]
+
 [dependencies]
 clap = { version = "4.4.12", features = ["derive"] }
 exr = "1.71.0"
