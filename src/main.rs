@@ -15,6 +15,7 @@ use std::ffi::{c_char, c_int, c_void, CString};
 use std::fs;
 use std::fs::File;
 use std::io::Write;
+use std::path::PathBuf;
 use std::string::String;
 use std::sync::{Arc, LazyLock, Mutex, OnceLock};
 use std::thread;
@@ -1448,24 +1449,42 @@ impl CommandState<'_> {
     }
 }
 
-fn bundle_path(bundle_name: &str) -> String {
+fn bundle_paths(bundle_name: &str) -> Vec<PathBuf> {
+    let bundle_filename = format!("{}.ofx.bundle", bundle_name);
+    let separator = if cfg!(target_os = "windows") {
+        ";"
+    } else {
+        ":"
+    };
+
+    let mut paths: Vec<_> = std::env::var("OFX_PLUGIN_PATH")
+        .unwrap_or_default()
+        .split(separator)
+        .filter(|s| !s.is_empty())
+        .map(|dir| PathBuf::from(dir).join(&bundle_filename))
+        .collect();
+
     #[cfg(target_os = "windows")]
-    return format!(
-        "C:/Program Files/Common Files/OFX/Plugins/{}.ofx.bundle",
-        bundle_name
+    paths.push(
+        PathBuf::from("C:/Program Files/Common Files/OFX/Plugins").join(bundle_filename),
     );
 
     #[cfg(target_os = "linux")]
-    return format!("/usr/OFX/Plugins/{}.ofx.bundle", bundle_name);
+    paths.push(PathBuf::from("/usr/OFX/Plugins").join(bundle_filename));
 
     #[cfg(target_os = "macos")]
-    return format!("/Library/OFX/Plugins/{}.ofx.bundle", bundle_name);
+    paths.push(PathBuf::from("/Library/OFX/Plugins").join(bundle_filename));
+
+    paths
 }
 
 fn load_bundle(bundle_name: &str) -> Result<(Bundle, libloading::Library)> {
-    let path = bundle_path(bundle_name);
-    let bundle = Bundle::new(path.into())
-        .with_context(|| format!("Loading bundle {}", bundle_name))?;
+    let path = bundle_paths(bundle_name)
+        .into_iter()
+        .find(|p| p.exists())
+        .ok_or_else(|| anyhow!("Bundle {} not found", bundle_name))?;
+    let bundle = Bundle::new(path.clone())
+        .with_context(|| format!("Loading bundle {}", path.display()))?;
     let lib = bundle.load()?;
     Ok((bundle, lib))
 }
