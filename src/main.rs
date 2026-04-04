@@ -1429,13 +1429,134 @@ struct Instance {
 }
 
 // Mutable state for running commands
-struct CommandState<'a> {
-    host: &'a OfxHost,
+struct CommandState {
+    // This references to the host properties keeps the object
+    // alive. It is never read, but a handle to it is stored in the
+    // OfxHost struct.
+    _host_props: Object<PropertySet>,
+    host: OfxHost,
     plugins: HashMap<String, LoadedPlugin>,
     instances: HashMap<String, Instance>,
 }
 
-impl CommandState<'_> {
+impl CommandState {
+    fn new() -> Self {
+        const VERSION_NAME: &str = env!("CARGO_PKG_VERSION");
+        let version: Vec<_> = VERSION_NAME
+            .split('.')
+            .map(|s| s.parse::<c_int>().unwrap())
+            .collect();
+        let host_props = PropertySet::new(
+            "host",
+            &[
+                (constants::PropName, "openfx-driver".into()),
+                (constants::PropLabel, "OpenFX Driver".into()),
+                (constants::PropVersion, version.into()),
+                (constants::PropVersionLabel, VERSION_NAME.into()),
+                (constants::PropAPIVersion, [1, 4].into()),
+                (constants::ImageEffectHostPropIsBackground, false.into()),
+                (constants::ImageEffectPropSupportsOverlays, false.into()),
+                (
+                    constants::ImageEffectPropSupportsMultiResolution,
+                    false.into(),
+                ),
+                (constants::ImageEffectPropSupportsTiles, false.into()),
+                (constants::ImageEffectPropTemporalClipAccess, false.into()),
+                (
+                    constants::ImageEffectPropSupportsMultipleClipDepths,
+                    false.into(),
+                ),
+                (
+                    constants::ImageEffectPropSupportsMultipleClipPARs,
+                    false.into(),
+                ),
+                (constants::ImageEffectPropSetableFrameRate, false.into()),
+                (constants::ImageEffectPropSetableFielding, false.into()),
+                (
+                    constants::ImageEffectInstancePropSequentialRender,
+                    false.into(),
+                ),
+                (
+                    constants::ParamHostPropSupportsStringAnimation,
+                    false.into(),
+                ),
+                (constants::ParamHostPropSupportsCustomInteract, false.into()),
+                (
+                    constants::ParamHostPropSupportsChoiceAnimation,
+                    false.into(),
+                ),
+                (
+                    constants::ParamHostPropSupportsStrChoiceAnimation,
+                    false.into(),
+                ),
+                (
+                    constants::ParamHostPropSupportsBooleanAnimation,
+                    false.into(),
+                ),
+                (
+                    constants::ParamHostPropSupportsCustomAnimation,
+                    false.into(),
+                ),
+                (
+                    constants::ParamHostPropSupportsParametricAnimation,
+                    false.into(),
+                ),
+                // Resolve GPU extensions weirdly use "false"/"true" strings
+                (
+                    constants::ImageEffectPropOpenCLRenderSupported,
+                    "false".into(),
+                ),
+                (
+                    constants::ImageEffectPropCudaRenderSupported,
+                    "false".into(),
+                ),
+                (
+                    constants::ImageEffectPropCudaStreamSupported,
+                    "false".into(),
+                ),
+                (
+                    constants::ImageEffectPropMetalRenderSupported,
+                    "false".into(),
+                ),
+                (constants::ImageEffectPropRenderQualityDraft, false.into()),
+                (constants::ParamHostPropMaxParameters, (-1).into()),
+                (constants::ParamHostPropMaxPages, 0.into()),
+                (constants::ParamHostPropPageRowColumnCount, [0, 0].into()),
+                (
+                    constants::ImageEffectPropSupportedComponents,
+                    constants::ImageComponentRGBA.into(),
+                ),
+                (
+                    constants::ImageEffectPropSupportedContexts,
+                    [
+                        constants::ImageEffectContextFilter,
+                        constants::ImageEffectContextGeneral,
+                        constants::ImageEffectContextGenerator,
+                        constants::ImageEffectContextPaint,
+                        constants::ImageEffectContextRetimer,
+                        constants::ImageEffectContextTransition,
+                    ]
+                    .into(),
+                ),
+                (
+                    constants::ImageEffectPropSupportedPixelDepths,
+                    constants::BitDepthFloat.into(),
+                ),
+            ],
+        )
+        .into_object();
+
+        Self {
+            _host_props: host_props.clone(),
+            host: OfxHost {
+                host: host_props.to_handle().into(),
+                fetchSuite: Some(fetch_suite),
+            },
+            plugins: HashMap::new(),
+            instances: HashMap::new(),
+        }
+    }
+
     fn get_plugin(&self, name: &str) -> Result<&LoadedPlugin> {
         self.plugins
             .get(name)
@@ -1513,7 +1634,7 @@ fn create_plugin(
         .into_iter()
         .find(|p| p.plugin_identifier == plugin_name)
         .ok_or(anyhow!("Plugin {} not found in bundle", plugin_name))?;
-    unsafe { (plugin.set_host)((state.host as *const _) as *mut _) };
+    unsafe { (plugin.set_host)((&state.host as *const _) as *mut _) };
     plugin.try_call_action(
         constants::ActionLoad,
         ImageEffectHandle::from(std::ptr::null_mut()),
@@ -2359,124 +2480,7 @@ enum CliCommands {
 }
 
 fn main() {
-    const VERSION_NAME: &str = env!("CARGO_PKG_VERSION");
-    let version: Vec<_> = VERSION_NAME
-        .split('.')
-        .map(|s| s.parse::<c_int>().unwrap())
-        .collect();
-    let host_props = PropertySet::new(
-        "host",
-        &[
-            (constants::PropName, "openfx-driver".into()),
-            (constants::PropLabel, "OpenFX Driver".into()),
-            (constants::PropVersion, version.into()),
-            (constants::PropVersionLabel, VERSION_NAME.into()),
-            (constants::PropAPIVersion, [1, 4].into()),
-            (constants::ImageEffectHostPropIsBackground, false.into()),
-            (constants::ImageEffectPropSupportsOverlays, false.into()),
-            (
-                constants::ImageEffectPropSupportsMultiResolution,
-                false.into(),
-            ),
-            (constants::ImageEffectPropSupportsTiles, false.into()),
-            (constants::ImageEffectPropTemporalClipAccess, false.into()),
-            (
-                constants::ImageEffectPropSupportsMultipleClipDepths,
-                false.into(),
-            ),
-            (
-                constants::ImageEffectPropSupportsMultipleClipPARs,
-                false.into(),
-            ),
-            (constants::ImageEffectPropSetableFrameRate, false.into()),
-            (constants::ImageEffectPropSetableFielding, false.into()),
-            (
-                constants::ImageEffectInstancePropSequentialRender,
-                false.into(),
-            ),
-            (
-                constants::ParamHostPropSupportsStringAnimation,
-                false.into(),
-            ),
-            (constants::ParamHostPropSupportsCustomInteract, false.into()),
-            (
-                constants::ParamHostPropSupportsChoiceAnimation,
-                false.into(),
-            ),
-            (
-                constants::ParamHostPropSupportsStrChoiceAnimation,
-                false.into(),
-            ),
-            (
-                constants::ParamHostPropSupportsBooleanAnimation,
-                false.into(),
-            ),
-            (
-                constants::ParamHostPropSupportsCustomAnimation,
-                false.into(),
-            ),
-            (
-                constants::ParamHostPropSupportsParametricAnimation,
-                false.into(),
-            ),
-            // Resolve GPU extensions weirdly use "false"/"true" strings
-            (
-                constants::ImageEffectPropOpenCLRenderSupported,
-                "false".into(),
-            ),
-            (
-                constants::ImageEffectPropCudaRenderSupported,
-                "false".into(),
-            ),
-            (
-                constants::ImageEffectPropCudaStreamSupported,
-                "false".into(),
-            ),
-            (
-                constants::ImageEffectPropMetalRenderSupported,
-                "false".into(),
-            ),
-            (constants::ImageEffectPropRenderQualityDraft, false.into()),
-            (constants::ParamHostPropMaxParameters, (-1).into()),
-            (constants::ParamHostPropMaxPages, 0.into()),
-            (constants::ParamHostPropPageRowColumnCount, [0, 0].into()),
-            (
-                constants::ImageEffectPropSupportedComponents,
-                constants::ImageComponentRGBA.into(),
-            ),
-            (
-                constants::ImageEffectPropSupportedContexts,
-                [
-                    constants::ImageEffectContextFilter,
-                    constants::ImageEffectContextGeneral,
-                    constants::ImageEffectContextGenerator,
-                    constants::ImageEffectContextPaint,
-                    constants::ImageEffectContextRetimer,
-                    constants::ImageEffectContextTransition,
-                ]
-                .into(),
-            ),
-            (
-                constants::ImageEffectPropSupportedPixelDepths,
-                constants::BitDepthFloat.into(),
-            ),
-        ],
-    )
-    .into_object();
-    // Clippy complains here, but we need to keep the original
-    // host_props alive or it will be deallocated while a handle to it
-    // still exists.
-    #[allow(clippy::redundant_clone)]
-    let host = OfxHost {
-        host: host_props.clone().to_handle().into(),
-        fetchSuite: Some(fetch_suite),
-    };
-
-    let mut state = CommandState {
-        host: &host,
-        plugins: HashMap::new(),
-        instances: HashMap::new(),
-    };
+    let mut state = CommandState::new();
 
     let args = Cli::parse();
 
