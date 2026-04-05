@@ -1803,7 +1803,6 @@ impl ExrWriter {
             format_width: (frame_limit.ilog10() + 1) as usize,
         }
     }
-
 }
 
 impl ImageWriter for ExrWriter {
@@ -2567,6 +2566,13 @@ fn main() {
 
 #[cfg(test)]
 mod test {
+    // Integration tests which use the process_command interface crash
+    // when run concurrently. This doesn't happen in the real
+    // application (which has a single main thread, though it can do
+    // multi-threaded renders), so it's not worth debugging at the
+    // moment. Just use a lock to serialize these tests.
+    static COMMAND_MUTEX: Mutex<()> = Mutex::new(());
+
     use crate::*;
     use commands::Command::*;
     use std::env;
@@ -2864,6 +2870,375 @@ mod test {
         assert!(
             main_props.get_all(constants::ParamPropType).unwrap()
                 == [constants::ParamTypePage.into()]
+        );
+    }
+
+    struct CaptureWriter {
+        images: Mutex<Vec<(u32, Image)>>,
+    }
+
+    impl ImageWriter for CaptureWriter {
+        fn write_image(&self, frame: u32, image: Image) -> GenericResult {
+            self.images.lock().unwrap().push((frame, image));
+            Ok(())
+        }
+    }
+
+    fn set_up_basic_plugin() -> CommandState {
+        let plugin_dir = basic_bundle_path().parent().unwrap();
+        unsafe { env::set_var("OFX_PLUGIN_PATH", plugin_dir) };
+        let mut state = CommandState::new();
+
+        process_command(
+            &CreatePlugin {
+                bundle_name: "basic".to_string(),
+                plugin_name: "uk.co.thefoundry.BasicGainPlugin".to_string(),
+            },
+            &mut state,
+        )
+        .unwrap();
+
+        process_command(
+            &CreateInstance {
+                plugin_name: "uk.co.thefoundry.BasicGainPlugin".to_string(),
+                instance_name: "instance1".to_string(),
+                context: ImageEffectContext::Filter,
+            },
+            &mut state,
+        )
+        .unwrap();
+
+        state
+    }
+
+    #[test]
+    fn render_basic() {
+        let _lock = COMMAND_MUTEX.lock().unwrap();
+
+        let input_path = "test/colorbars.exr";
+        let mut state = set_up_basic_plugin();
+
+        process_command(
+            &SetParams {
+                instance_name: "instance1".to_string(),
+                values: vec![("scale".to_string(), ParamValue::Double(2.0))],
+                call_instance_changed: false,
+            },
+            &mut state,
+        )
+        .unwrap();
+
+        let writer = CaptureWriter {
+            images: Default::default(),
+        };
+
+        let inputs = HashMap::from([(
+            "Source".to_string(),
+            Input {
+                filename: input_path.to_string(),
+                rowbytes: None,
+                origin: (0, 0),
+            },
+        )]);
+
+        render(
+            "instance1",
+            &inputs,
+            &writer,
+            None,
+            (FrameNumber(0), FrameNumber(1)),
+            1,
+            &mut state,
+        )
+        .unwrap();
+
+        let images = writer.images.lock().unwrap();
+        assert_eq!(images.len(), 1);
+        let (frame, image) = &images[0];
+        assert_eq!(*frame, 0);
+        assert_eq!(image.bounds.width(), 25);
+        assert_eq!(image.bounds.height(), 14);
+        insta::assert_debug_snapshot!(image.pixels);
+    }
+
+    #[test]
+    fn render_layout() {
+        let _lock = COMMAND_MUTEX.lock().unwrap();
+
+        let mut state = set_up_basic_plugin();
+        let input_path = "test/colorbars.exr";
+
+        process_command(
+            &SetParams {
+                instance_name: "instance1".to_string(),
+                values: vec![("scale".to_string(), ParamValue::Double(2.0))],
+                call_instance_changed: false,
+            },
+            &mut state,
+        )
+        .unwrap();
+
+        let writer = CaptureWriter {
+            images: Default::default(),
+        };
+
+        let inputs = HashMap::from([(
+            "Source".to_string(),
+            Input {
+                filename: input_path.to_string(),
+                rowbytes: None,
+                origin: (-2, 3),
+            },
+        )]);
+
+        render(
+            "instance1",
+            &inputs,
+            &writer,
+            Some(&RenderLayout {
+                project_dims: (25.0, 25.0),
+                render_window: Some(OfxRectI {
+                    x1: 10,
+                    y1: 2,
+                    x2: 26,
+                    y2: 12,
+                }),
+                rowbytes: None,
+                crop_inputs_to_roi: false,
+            }),
+            (FrameNumber(0), FrameNumber(1)),
+            1,
+            &mut state,
+        )
+        .unwrap();
+
+        let images = writer.images.lock().unwrap();
+        assert_eq!(images.len(), 1);
+        let (frame, image) = &images[0];
+        assert_eq!(*frame, 0);
+        assert_eq!(image.bounds.width(), 16);
+        assert_eq!(image.bounds.height(), 10);
+        insta::assert_debug_snapshot!(image.pixels);
+    }
+
+    #[test]
+    fn render_use_rod() {
+        let _lock = COMMAND_MUTEX.lock().unwrap();
+
+        let mut state = set_up_basic_plugin();
+        let input_path = "test/colorbars.exr";
+
+        process_command(
+            &SetParams {
+                instance_name: "instance1".to_string(),
+                values: vec![("scale".to_string(), ParamValue::Double(2.0))],
+                call_instance_changed: false,
+            },
+            &mut state,
+        )
+        .unwrap();
+
+        let writer = CaptureWriter {
+            images: Default::default(),
+        };
+
+        let inputs = HashMap::from([(
+            "Source".to_string(),
+            Input {
+                filename: input_path.to_string(),
+                rowbytes: None,
+                origin: (5, 5),
+            },
+        )]);
+
+        render(
+            "instance1",
+            &inputs,
+            &writer,
+            Some(&RenderLayout {
+                project_dims: (50.0, 50.0),
+                render_window: None,
+                rowbytes: None,
+                crop_inputs_to_roi: false,
+            }),
+            (FrameNumber(0), FrameNumber(1)),
+            1,
+            &mut state,
+        )
+        .unwrap();
+
+        let images = writer.images.lock().unwrap();
+        assert_eq!(images.len(), 1);
+        let (frame, image) = &images[0];
+        assert_eq!(*frame, 0);
+        assert_eq!(image.bounds.width(), 29);
+        assert_eq!(image.bounds.height(), 20);
+        insta::assert_debug_snapshot!(image.pixels);
+    }
+
+    #[test]
+    fn render_use_roi() {
+        let _lock = COMMAND_MUTEX.lock().unwrap();
+
+        let mut state = set_up_basic_plugin();
+        let input_path = "test/colorbars.exr";
+
+        process_command(
+            &SetParams {
+                instance_name: "instance1".to_string(),
+                values: vec![("scale".to_string(), ParamValue::Double(2.0))],
+                call_instance_changed: false,
+            },
+            &mut state,
+        )
+        .unwrap();
+
+        let writer = CaptureWriter {
+            images: Default::default(),
+        };
+
+        let inputs = HashMap::from([(
+            "Source".to_string(),
+            Input {
+                filename: input_path.to_string(),
+                rowbytes: None,
+                origin: (0, 0),
+            },
+        )]);
+
+        render(
+            "instance1",
+            &inputs,
+            &writer,
+            Some(&RenderLayout {
+                project_dims: (25.0, 25.0),
+                render_window: Some(OfxRectI {
+                    x1: 0,
+                    y1: 0,
+                    x2: 25,
+                    y2: 14,
+                }),
+                rowbytes: None,
+                crop_inputs_to_roi: true,
+            }),
+            (FrameNumber(0), FrameNumber(1)),
+            1,
+            &mut state,
+        )
+        .unwrap();
+
+        let images = writer.images.lock().unwrap();
+        assert_eq!(images.len(), 1);
+        let (frame, image) = &images[0];
+        assert_eq!(*frame, 0);
+        assert_eq!(image.bounds.width(), 25);
+        assert_eq!(image.bounds.height(), 14);
+        insta::assert_debug_snapshot!(image.pixels);
+    }
+
+    #[test]
+    fn render_rowbytes() {
+        let _lock = COMMAND_MUTEX.lock();
+
+        let mut state = set_up_basic_plugin();
+        let input_path = "test/colorbars.exr";
+
+        process_command(
+            &SetParams {
+                instance_name: "instance1".to_string(),
+                values: vec![("scale".to_string(), ParamValue::Double(2.0))],
+                call_instance_changed: false,
+            },
+            &mut state,
+        )
+        .unwrap();
+
+        let writer = CaptureWriter {
+            images: Default::default(),
+        };
+
+        let inputs = HashMap::from([(
+            "Source".to_string(),
+            Input {
+                filename: input_path.to_string(),
+                rowbytes: Some(std::mem::size_of::<Pixel>() * (32)), // Pad to 32 pixels
+                origin: (0, 0),
+            },
+        )]);
+
+        render(
+            "instance1",
+            &inputs,
+            &writer,
+            Some(&RenderLayout {
+                project_dims: (25.0, 14.0),
+                render_window: Some(OfxRectI {
+                    x1: 0,
+                    y1: 0,
+                    x2: 25,
+                    y2: 14,
+                }),
+                rowbytes: Some(std::mem::size_of::<Pixel>() * (32)), // Pad to 32 pixels
+                crop_inputs_to_roi: false,
+            }),
+            (FrameNumber(0), FrameNumber(1)),
+            1,
+            &mut state,
+        )
+        .unwrap();
+
+        let images = writer.images.lock().unwrap();
+        assert_eq!(images.len(), 1);
+        let (frame, image) = &images[0];
+        assert_eq!(*frame, 0);
+        assert_eq!(image.bounds.width(), 25);
+        assert_eq!(image.bounds.height(), 14);
+        insta::assert_debug_snapshot!(image.pixels);
+    }
+
+    #[test]
+    fn get_rod_basic() {
+        let mut state = set_up_basic_plugin();
+
+        let input_rods = HashMap::from([(
+            "Source".to_string(),
+            OfxRectD {
+                x1: 0.0,
+                y1: 0.0,
+                x2: 100.0,
+                y2: 50.0,
+            },
+        )]);
+
+        let rod = get_rod("instance1", (200.0, 100.0), &input_rods, &mut state).unwrap();
+
+        assert_eq!(rod.x1, -1.0);
+        assert_eq!(rod.y1, -2.0);
+        assert_eq!(rod.x2, 103.0);
+        assert_eq!(rod.y2, 54.0);
+    }
+
+    #[test]
+    fn get_rois_basic() {
+        let mut state = set_up_basic_plugin();
+
+        let region_of_interest = OfxRectD {
+            x1: 10.0,
+            y1: 20.0,
+            x2: 110.0,
+            y2: 70.0,
+        };
+        let rois = get_rois("instance1", (200.0, 100.0), &region_of_interest, &mut state)
+            .unwrap();
+
+        assert_eq!(
+            rois["Source"],
+            OfxRectD {
+                x1: 11.0,
+                y1: 22.0,
+                x2: 107.0,
+                y2: 66.0,
+            }
         );
     }
 }

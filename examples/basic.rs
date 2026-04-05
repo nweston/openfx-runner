@@ -1519,6 +1519,98 @@ unsafe extern "C" fn describe(mut effect: OfxImageEffectHandle) -> OfxStatus {
     );
     return kOfxStatOK;
 }
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn getSpatialRoD(
+    mut effect: OfxImageEffectHandle,
+    mut inArgs: OfxPropertySetHandle,
+    mut outArgs: OfxPropertySetHandle,
+) -> OfxStatus {
+    let mut myData: *mut MyInstanceData = getMyInstanceData(effect);
+    let mut time: OfxTime = 0.;
+    (*gPropHost)
+        .propGetDouble
+        .expect("non-null function pointer")(
+        inArgs,
+        kOfxPropTime.as_ptr(),
+        0 as ::core::ffi::c_int,
+        &raw mut time,
+    );
+    let mut rod: OfxRectD = OfxRectD {
+        x1: 0.,
+        y1: 0.,
+        x2: 0.,
+        y2: 0.,
+    };
+    (*gEffectHost)
+        .clipGetRegionOfDefinition
+        .expect("non-null function pointer")((*myData).sourceClip, time, &raw mut rod);
+    rod.x1 -= 1.;
+    rod.y1 -= 2.;
+    rod.x2 += 3.;
+    rod.y2 += 4.;
+    (*gPropHost)
+        .propSetDoubleN
+        .expect("non-null function pointer")(
+        outArgs,
+        kOfxImageEffectPropRegionOfDefinition.as_ptr(),
+        4 as ::core::ffi::c_int,
+        &raw mut rod.x1,
+    );
+    return kOfxStatOK;
+}
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn getSpatialRoI(
+    mut effect: OfxImageEffectHandle,
+    mut inArgs: OfxPropertySetHandle,
+    mut outArgs: OfxPropertySetHandle,
+) -> OfxStatus {
+    let mut roi: OfxRectD = OfxRectD {
+        x1: 0.,
+        y1: 0.,
+        x2: 0.,
+        y2: 0.,
+    };
+    (*gPropHost)
+        .propGetDoubleN
+        .expect("non-null function pointer")(
+        inArgs,
+        kOfxImageEffectPropRegionOfInterest.as_ptr(),
+        4 as ::core::ffi::c_int,
+        &raw mut roi.x1,
+    );
+
+    roi.x1 += 1.;
+    roi.y1 += 2.;
+    roi.x2 -= 3.;
+    roi.y2 -= 4.;
+
+    (*gPropHost)
+        .propSetDoubleN
+        .expect("non-null function pointer")(
+        outArgs,
+        b"OfxImageClipPropRoI_Source\0" as *const u8 as *const ::core::ffi::c_char,
+        4 as ::core::ffi::c_int,
+        &raw mut roi.x1,
+    );
+    let mut myData: *mut MyInstanceData = getMyInstanceData(effect);
+    if (*myData).isGeneralEffect as ::core::ffi::c_int != 0
+        && ofxuIsClipConnected(
+            effect,
+            b"Mask\0" as *const u8 as *const ::core::ffi::c_char,
+        ) as ::core::ffi::c_int
+            != 0
+    {
+        (*gPropHost)
+            .propSetDoubleN
+            .expect("non-null function pointer")(
+            outArgs,
+            b"OfxImageClipPropRoI_Mask\0" as *const u8 as *const ::core::ffi::c_char,
+            4 as ::core::ffi::c_int,
+            &raw mut roi.x1,
+        );
+    }
+    return kOfxStatOK;
+}
 unsafe extern "C" fn pluginMain(
     mut action: *const ::core::ffi::c_char,
     mut handle: *const ::core::ffi::c_void,
@@ -1543,6 +1635,14 @@ unsafe extern "C" fn pluginMain(
         == 0 as ::core::ffi::c_int
     {
         return render(effect, inArgs, outArgs);
+    } else if strcmp(action, kOfxImageEffectActionGetRegionOfDefinition.as_ptr())
+        == 0 as ::core::ffi::c_int
+    {
+        return getSpatialRoD(effect, inArgs, outArgs);
+    } else if strcmp(action, kOfxImageEffectActionGetRegionsOfInterest.as_ptr())
+        == 0 as ::core::ffi::c_int
+    {
+        return getSpatialRoI(effect, inArgs, outArgs);
     } else if strcmp(action, kOfxImageEffectActionGetClipPreferences.as_ptr())
         == 0 as ::core::ffi::c_int
     {
@@ -1664,6 +1764,16 @@ pub const kOfxImageEffectContextGeneral: [::core::ffi::c_char; 29] = unsafe {
         *b"OfxImageEffectContextGeneral\0",
     )
 };
+pub const kOfxImageEffectActionGetRegionOfDefinition: [::core::ffi::c_char; 42] = unsafe {
+    ::core::mem::transmute::<[u8; 42], [::core::ffi::c_char; 42]>(
+        *b"OfxImageEffectActionGetRegionOfDefinition\0",
+    )
+};
+pub const kOfxImageEffectActionGetRegionsOfInterest: [::core::ffi::c_char; 41] = unsafe {
+    ::core::mem::transmute::<[u8; 41], [::core::ffi::c_char; 41]>(
+        *b"OfxImageEffectActionGetRegionsOfInterest\0",
+    )
+};
 pub const kOfxImageEffectActionGetClipPreferences: [::core::ffi::c_char; 39] = unsafe {
     ::core::mem::transmute::<[u8; 39], [::core::ffi::c_char; 39]>(
         *b"OfxImageEffectActionGetClipPreferences\0",
@@ -1755,6 +1865,16 @@ pub const kOfxImagePropRowBytes: [::core::ffi::c_char; 21] = unsafe {
 pub const kOfxImageEffectPluginPropFieldRenderTwiceAlways: [::core::ffi::c_char; 47] = unsafe {
     ::core::mem::transmute::<[u8; 47], [::core::ffi::c_char; 47]>(
         *b"OfxImageEffectPluginPropFieldRenderTwiceAlways\0",
+    )
+};
+pub const kOfxImageEffectPropRegionOfDefinition: [::core::ffi::c_char; 37] = unsafe {
+    ::core::mem::transmute::<[u8; 37], [::core::ffi::c_char; 37]>(
+        *b"OfxImageEffectPropRegionOfDefinition\0",
+    )
+};
+pub const kOfxImageEffectPropRegionOfInterest: [::core::ffi::c_char; 35] = unsafe {
+    ::core::mem::transmute::<[u8; 35], [::core::ffi::c_char; 35]>(
+        *b"OfxImageEffectPropRegionOfInterest\0",
     )
 };
 pub const kOfxImageEffectPropRenderWindow: [::core::ffi::c_char; 31] = unsafe {
