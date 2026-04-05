@@ -1425,7 +1425,7 @@ unsafe extern "C" fn describeInContext(
     defineScaleParam(
         paramSet,
         b"scale\0" as *const u8 as *const ::core::ffi::c_char,
-        b"scale\0" as *const u8 as *const ::core::ffi::c_char,
+        b"Scale\0" as *const u8 as *const ::core::ffi::c_char,
         b"scale\0" as *const u8 as *const ::core::ffi::c_char,
         b"Scales all component in the image\0" as *const u8 as *const ::core::ffi::c_char,
         ::core::ptr::null::<::core::ffi::c_char>(),

@@ -2550,6 +2550,7 @@ fn main() {
 #[cfg(test)]
 mod test {
     use crate::*;
+    use commands::Command::*;
     use std::env;
     use std::path;
 
@@ -2788,5 +2789,63 @@ mod test {
     fn load_basic_bundle() {
         let bundle = Bundle::new(basic_bundle_path().to_path_buf()).unwrap();
         bundle.load().unwrap();
+    }
+
+    #[test]
+    fn create_basic_instance() {
+        let plugin_dir = basic_bundle_path().parent().unwrap();
+        unsafe { env::set_var("OFX_PLUGIN_PATH", plugin_dir) };
+
+        let mut state = CommandState::new();
+
+        process_command(
+            &CreatePlugin {
+                bundle_name: "basic".to_string(),
+                plugin_name: "uk.co.thefoundry.BasicGainPlugin".to_string(),
+            },
+            &mut state,
+        )
+        .unwrap();
+
+        process_command(
+            &CreateInstance {
+                plugin_name: "uk.co.thefoundry.BasicGainPlugin".to_string(),
+                instance_name: "instance1".to_string(),
+                context: ImageEffectContext::Filter,
+            },
+            &mut state,
+        )
+        .unwrap();
+
+        let instance = state.get_instance("instance1").unwrap();
+        let effect = instance.effect.lock();
+
+        // Check clips: basic plugin defines "Source" and "Output"
+        assert!(effect.clips.contains_key("Source"));
+        assert!(effect.clips.contains_key("Output"));
+        assert_eq!(effect.clips.len(), 2);
+
+        // Check params: basic plugin defines "scale" (Double) and "Main" (Page)
+        let param_set = effect.param_set.lock();
+        assert_eq!(param_set.params.len(), 2);
+
+        let scale = param_set.params.get("scale").unwrap().lock();
+        let scale_props = scale.properties.lock();
+        assert!(
+            scale_props.get_all(constants::ParamPropType).unwrap()
+                == [constants::ParamTypeDouble.into()]
+        );
+        assert!(scale_props.get_all(constants::PropLabel).unwrap() == ["Scale".into()]);
+        assert!(scale_props.get_all(constants::PropName).unwrap() == ["scale".into()]);
+        assert!(
+            scale_props.get_all(constants::ParamPropDisplayMin).unwrap() == [0.0.into()]
+        );
+
+        let main = param_set.params.get("Main").unwrap().lock();
+        let main_props = main.properties.lock();
+        assert!(
+            main_props.get_all(constants::ParamPropType).unwrap()
+                == [constants::ParamTypePage.into()]
+        );
     }
 }
