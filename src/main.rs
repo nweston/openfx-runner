@@ -1787,37 +1787,48 @@ fn get_input_image(name: &str, input: &Input) -> Result<Image> {
     read_exr(name, &input.filename, input.rowbytes, input.origin)
 }
 
-fn write_image(
-    output_directory: Option<&String>,
-    frame_limit: u32,
-    frame: u32,
-    image: Image,
-) -> GenericResult {
-    if let Some(output_directory) = output_directory {
-        let format_width = (frame_limit.ilog10() + 1) as usize;
-
-        write_exr(
-            &format!("{output_directory}/{frame:0format_width$}.exr"),
-            image,
-        )?;
-    }
-    Ok(())
+trait ImageWriter {
+    fn write_image(&self, frame: u32, image: Image) -> GenericResult;
 }
 
-fn render(
+struct ExrWriter {
+    output_directory: Option<String>,
+    format_width: usize,
+}
+
+impl ExrWriter {
+    fn new(output_directory: Option<&String>, frame_limit: u32) -> Self {
+        ExrWriter {
+            output_directory: output_directory.cloned(),
+            format_width: (frame_limit.ilog10() + 1) as usize,
+        }
+    }
+
+}
+
+impl ImageWriter for ExrWriter {
+    fn write_image(&self, frame: u32, image: Image) -> GenericResult {
+        if let Some(output_directory) = &self.output_directory {
+            let format_width = self.format_width;
+
+            write_exr(
+                &format!("{output_directory}/{frame:0format_width$}.exr"),
+                image,
+            )?;
+        }
+        Ok(())
+    }
+}
+
+fn render<W: ImageWriter + Sync>(
     instance_name: &str,
     inputs: &HashMap<String, Input>,
-    output_directory: Option<&String>,
+    writer: &W,
     layout: Option<&RenderLayout>,
     frame_range: (FrameNumber, FrameNumber),
     thread_count: u32,
     state: &mut CommandState,
 ) -> GenericResult {
-    // Create output directory
-    if let Some(output_directory) = output_directory {
-        std::fs::create_dir_all(output_directory)?;
-    }
-
     let (FrameNumber(frame_min), FrameNumber(frame_limit)) = frame_range;
     if frame_limit <= frame_min {
         bail!(format!("Invalid frame range {frame_min}..{frame_limit}"));
@@ -1911,9 +1922,7 @@ fn render(
                 PropertySetHandle::from(std::ptr::null_mut()),
             )?;
 
-            write_image(
-                output_directory,
-                frame_limit,
+            writer.write_image(
                 frame,
                 instance
                     .effect
@@ -2365,16 +2374,23 @@ fn process_command(command: &Command, state: &mut CommandState) -> GenericResult
             layout,
             frame_range,
             thread_count,
-        } => render(
-            instance_name,
-            inputs,
-            output_directory.as_ref(),
-            layout.as_ref(),
-            *frame_range,
-            *thread_count,
-            state,
-        )
-        .context("Render"),
+        } => {
+            if let Some(dir) = output_directory {
+                std::fs::create_dir_all(dir)?;
+            }
+            let (_, FrameNumber(frame_limit)) = *frame_range;
+            let writer = ExrWriter::new(output_directory.as_ref(), frame_limit);
+            render(
+                instance_name,
+                inputs,
+                &writer,
+                layout.as_ref(),
+                *frame_range,
+                *thread_count,
+                state,
+            )
+            .context("Render")
+        }
         PrintParams { instance_name } => {
             print_params(instance_name, state).context("PrintParams")
         }
