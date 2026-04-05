@@ -2230,15 +2230,15 @@ fn describe_in_context(
     plugin_name: &str,
     context: ImageEffectContext,
     state: &mut CommandState,
-) -> GenericResult {
+) -> Result<ImageEffect> {
     describe(bundle_name, plugin_name, state)?;
 
     let plugin = state.get_plugin(plugin_name)?;
 
-    // Descriptor for the plugin in Filter context
-    let filter = ImageEffect {
+    // Descriptor for the plugin in the given context
+    let effect = ImageEffect {
         properties: PropertySet::new(
-            "filter",
+            "effect",
             &[(
                 constants::PluginPropFilePath,
                 plugin.bundle.path.to_str().unwrap().into(),
@@ -2249,25 +2249,23 @@ fn describe_in_context(
     }
     .into_object();
 
-    let filter_inargs = PropertySet::new(
-        "filter_inargs",
+    let effect_inargs = PropertySet::new(
+        "effect_inargs",
         &[(
             constants::ImageEffectPropContext,
             image_effect_context_str(context).into(),
         )],
     )
     .into_object();
-    #[allow(clippy::redundant_clone)]
+
     plugin.plugin.try_call_action(
         constants::ImageEffectActionDescribeInContext,
-        filter.clone().into(),
-        PropertySetHandle::from(filter_inargs.clone()),
+        effect.clone().into(),
+        PropertySetHandle::from(effect_inargs.clone()),
         PropertySetHandle::from(std::ptr::null_mut()),
     )?;
 
-    output!("{}", serde_json::to_string(&*filter.lock())?);
-
-    Ok(())
+    Ok(effect.lock().clone())
 }
 
 fn configure_message_suite_responses(
@@ -2405,8 +2403,12 @@ fn process_command(command: &Command, state: &mut CommandState) -> GenericResult
             bundle_name,
             plugin_name,
             context,
-        } => describe_in_context(bundle_name, plugin_name, *context, state)
-            .context("DescribeFilter"),
+        } => {
+            let effect = describe_in_context(bundle_name, plugin_name, *context, state)
+                .context("DescribeFilter")?;
+            output!("{}", serde_json::to_string(&effect)?);
+            Ok(())
+        }
         PrintRoIs {
             instance_name,
             region_of_interest,
