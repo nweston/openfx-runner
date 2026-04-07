@@ -2530,6 +2530,91 @@ mod test {
     use std::env;
     use std::path;
 
+    /// Package a dynamic library into an OFX bundle.
+    ///
+    /// Creates `{bundle_dir}/{name}.ofx.bundle` with the following contents:
+    /// - `Contents/Info.plist`
+    /// - `Contents/{arch}/` containing the library copied as `{name}.ofx`
+    ///
+    /// Returns the path to the created bundle directory.
+    fn package_bundle(
+        lib_path: &std::path::Path,
+        bundle_dir: &std::path::Path,
+        name: &str,
+        version_string: &str,
+    ) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+        let bundle_path = bundle_dir.join(format!("{}.ofx.bundle", name));
+        let ofx_name = format!("{}.ofx", name);
+
+        #[cfg(target_os = "linux")]
+        let arch_dir = "Linux-x86-64";
+        #[cfg(target_os = "windows")]
+        let arch_dir = "Win64";
+        #[cfg(target_os = "macos")]
+        let arch_dir = "MacOS";
+
+        let contents_dir = bundle_path.join("Contents");
+        let arch_path = contents_dir.join(arch_dir);
+        std::fs::create_dir_all(&arch_path)?;
+
+        std::fs::copy(lib_path, arch_path.join(&ofx_name))?;
+
+        let mut dict = plist::Dictionary::new();
+        dict.insert(
+            "CFBundleDevelopmentRegion".to_string(),
+            plist::Value::from("English".to_string()),
+        );
+        dict.insert(
+            "CFBundleExecutable".to_string(),
+            plist::Value::from(ofx_name),
+        );
+        dict.insert(
+            "CFBundleInfoDictionaryVersion".to_string(),
+            plist::Value::from("6.0".to_string()),
+        );
+        dict.insert(
+            "CFBundlePackageType".to_string(),
+            plist::Value::from("BNDL".to_string()),
+        );
+        dict.insert(
+            "CFBundleVersion".to_string(),
+            plist::Value::from(version_string.to_string()),
+        );
+        plist::Value::Dictionary(dict).to_file_xml(contents_dir.join("Info.plist"))?;
+
+        Ok(bundle_path)
+    }
+
+    fn example_path(name: &str) -> std::path::PathBuf {
+        // OUT_DIR is target/{profile}/build/{pkg}-{hash}/out;
+        // examples are built into target/{profile}/examples/
+        let out_dir = path::PathBuf::from(env!("OUT_DIR"));
+        let examples_dir = out_dir.join("../../../examples");
+
+        #[cfg(target_os = "linux")]
+        let lib_name = format!("lib{}.so", name);
+        #[cfg(target_os = "windows")]
+        let lib_name = format!("{}.dll", name);
+        #[cfg(target_os = "macos")]
+        let lib_name = format!("lib{}.dylib", name);
+
+        examples_dir.join(lib_name)
+    }
+
+    static BASIC_BUNDLE_PATH: OnceLock<path::PathBuf> = OnceLock::new();
+
+    fn basic_bundle_path() -> &'static path::Path {
+        BASIC_BUNDLE_PATH.get_or_init(|| {
+            package_bundle(
+                &example_path("basic"),
+                path::Path::new(env!("OUT_DIR")),
+                "basic",
+                "1.0.0",
+            )
+            .unwrap()
+        })
+    }
+
     fn bundle_from_plist(name: &str) -> Bundle {
         Bundle {
             path: "fake".into(),
@@ -2674,5 +2759,11 @@ mod test {
                 format!("{}: undefined symbol: OfxGetPlugin", path.display())
             );
         }
+    }
+
+    #[test]
+    fn load_basic_bundle() {
+        let bundle = Bundle::new(basic_bundle_path().to_path_buf()).unwrap();
+        bundle.load().unwrap();
     }
 }
