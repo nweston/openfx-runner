@@ -1,6 +1,9 @@
 use anyhow::{anyhow, bail, Context, Result};
 use clap::{Parser, Subcommand};
-use exr::prelude::{read_first_rgba_layer_from_file, write_rgba_file};
+use exr::prelude::{
+    read, read_first_rgba_layer_from_file, write_rgba_file, ReadChannels, ReadLayers,
+    ReadSpecificChannel, WritableImage,
+};
 use openfx_rs::constants;
 use openfx_rs::constants::ofxstatus;
 use openfx_rs::strings::OfxStr;
@@ -385,15 +388,49 @@ impl Pixel {
 }
 
 #[derive(Clone, Debug)]
+enum ImagePixels {
+    Rgba(Vec<Pixel>),
+    Alpha(Vec<f32>),
+}
+
+impl ImagePixels {
+    fn as_mut_ptr(&mut self) -> *mut c_void {
+        match self {
+            ImagePixels::Rgba(v) => v.as_mut_ptr() as _,
+            ImagePixels::Alpha(v) => v.as_mut_ptr() as _,
+        }
+    }
+
+    fn bytes_per_pixel(&self) -> usize {
+        match self {
+            ImagePixels::Rgba(_) => std::mem::size_of::<Pixel>(),
+            ImagePixels::Alpha(_) => std::mem::size_of::<f32>(),
+        }
+    }
+
+    fn component_str(&self) -> OfxStr<'static> {
+        match self {
+            ImagePixels::Rgba(_) => constants::ImageComponentRGBA,
+            ImagePixels::Alpha(_) => constants::ImageComponentAlpha,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct Image {
     bounds: OfxRectI,
-    pixels: Vec<Pixel>,
+    pixels: ImagePixels,
     stride: usize,
     properties: Object<PropertySet>,
 }
 
 impl Image {
-    fn new(name: &str, bounds: &OfxRectI, mut pixels: Vec<Pixel>, stride: usize) -> Self {
+    fn new(
+        name: &str,
+        bounds: &OfxRectI,
+        mut pixels: ImagePixels,
+        stride: usize,
+    ) -> Self {
         let properties = PropertySet::new(
             &format!("{}_image", name),
             &[
@@ -404,7 +441,7 @@ impl Image {
                 ),
                 (
                     constants::ImageEffectPropComponents,
-                    constants::ImageComponentRGBA.into(),
+                    pixels.component_str().into(),
                 ),
                 (
                     constants::ImageEffectPropPreMultiplication,
@@ -412,15 +449,12 @@ impl Image {
                 ),
                 (constants::ImageEffectPropRenderScale, [1.0, 1.0].into()),
                 (constants::ImagePropPixelAspectRatio, (1.0).into()),
-                (
-                    constants::ImagePropData,
-                    (pixels.as_mut_ptr() as *mut c_void).into(),
-                ),
+                (constants::ImagePropData, pixels.as_mut_ptr().into()),
                 (constants::ImagePropBounds, bounds.into()),
                 (constants::ImagePropRegionOfDefinition, bounds.into()),
                 (
                     constants::ImagePropRowBytes,
-                    (stride * std::mem::size_of::<Pixel>()).into(),
+                    (stride * pixels.bytes_per_pixel()).into(),
                 ),
                 (constants::ImagePropField, constants::ImageFieldNone.into()),
             ],
@@ -434,10 +468,24 @@ impl Image {
         }
     }
 
-    fn empty(name: &str, bounds: &OfxRectI, rowbytes: Option<usize>) -> Self {
-        let stride = get_image_stride(bounds.width(), rowbytes);
-        let mut pixels = Vec::new();
-        pixels.resize(stride * bounds.height(), Pixel::zero());
+    fn empty(
+        name: &str,
+        bounds: &OfxRectI,
+        rowbytes: Option<usize>,
+        alpha: bool,
+    ) -> Self {
+        let pixel_size = if alpha {
+            std::mem::size_of::<f32>()
+        } else {
+            std::mem::size_of::<Pixel>()
+        };
+        let stride = get_image_stride(bounds.width(), rowbytes, pixel_size);
+        let pixels = if alpha {
+            ImagePixels::Alpha(vec![0.0f32; stride * bounds.height()])
+        } else {
+            ImagePixels::Rgba(vec![Pixel::zero(); stride * bounds.height()])
+        };
+
         Self::new(name, bounds, pixels, stride)
     }
 
@@ -455,7 +503,11 @@ impl Image {
         let offset = self.bounds.width() as isize * (bounds.y1 - self.bounds.y1) as isize
             + (bounds.x1 - self.bounds.x1) as isize;
         let data = unsafe {
-            PropertyValue::Pointer(Addr(self.pixels.as_ptr().offset(offset) as _))
+            let ptr = match &self.pixels {
+                ImagePixels::Rgba(v) => v.as_ptr().offset(offset) as *const c_void,
+                ImagePixels::Alpha(v) => v.as_ptr().offset(offset) as *const c_void,
+            };
+            PropertyValue::Pointer(Addr(ptr as _))
         };
 
         let mut props = self.properties.lock();
@@ -476,6 +528,7 @@ enum ClipImages {
         name: &'static str,
         bounds: OfxRectI,
         rowbytes: Option<usize>,
+        alpha: bool,
     },
 }
 
@@ -497,10 +550,11 @@ impl ClipImages {
                 name,
                 bounds,
                 rowbytes,
+                alpha,
             } => Some(
                 images
                     .entry(frame)
-                    .or_insert_with(|| Image::empty(name, bounds, *rowbytes)),
+                    .or_insert_with(|| Image::empty(name, bounds, *rowbytes, *alpha)),
             ),
             ClipImages::NoImage => None,
         }
@@ -530,6 +584,11 @@ static CLIP_IMAGES: Mutex<Vec<Object<PropertySet>>> = Mutex::new(Vec::new());
 
 impl Clip {
     fn set_image(&mut self, image: Image) {
+        self.properties.lock().set(
+            constants::ImageEffectPropComponents.as_str(),
+            0,
+            image.pixels.component_str().into(),
+        );
         self.region_of_definition = Some(OfxRectD {
             x1: 0.0,
             y1: 0.0,
@@ -1318,6 +1377,12 @@ fn create_images(
         project_dims,
     );
 
+    // TODO: call getClipPreferences action to determine output format
+    let output_alpha = inputs
+        .get("Source")
+        .map(|img| matches!(img.pixels, ImagePixels::Alpha(_)))
+        .unwrap_or(false);
+
     for (name, image) in inputs {
         effect.get_clip(&name)?.lock().set_image(image);
     }
@@ -1328,6 +1393,7 @@ fn create_images(
         name: "Output",
         bounds: *output_rect,
         rowbytes: output_rowbytes,
+        alpha: output_alpha,
     };
     Ok(())
 }
@@ -1335,9 +1401,9 @@ fn create_images(
 // Number of pixels per row. If rowbytes is provided, try to make
 // pixel count match it, but always return at least the original
 // width.
-fn get_image_stride(width: usize, rowbytes: Option<usize>) -> usize {
+fn get_image_stride(width: usize, rowbytes: Option<usize>, pixel_size: usize) -> usize {
     rowbytes
-        .map(|b| max(b / std::mem::size_of::<Pixel>(), width))
+        .map(|b| max(b / pixel_size, width))
         .unwrap_or(width)
 }
 
@@ -1347,10 +1413,23 @@ fn read_exr(
     rowbytes: Option<usize>,
     origin: (i32, i32),
 ) -> Result<Image> {
+    read_exr_rgba(name, path, rowbytes, origin).or_else(|_| {
+        read_exr_alpha(name, path, rowbytes, origin)
+            .with_context(|| format!("Read EXR \"{}\"", path))
+    })
+}
+
+fn read_exr_rgba(
+    name: &str,
+    path: &str,
+    rowbytes: Option<usize>,
+    origin: (i32, i32),
+) -> Result<Image> {
     // Rowbytes calculation is a bit weird:
     // read_first_rgba_layer_from_file can't return a separate
-    // rowbytes/stride value, so we have to return the width an
+    // rowbytes/stride value, so we have to return the width and
     // recalculate stride several times.
+    let pixel_size = std::mem::size_of::<Pixel>();
 
     let (width, height, pixels) = read_first_rgba_layer_from_file(
         path,
@@ -1363,7 +1442,7 @@ fn read_exr(
                 dims.height(),
                 vec![
                     Pixel::zero();
-                    get_image_stride(dims.width(), rowbytes) * dims.height()
+                    get_image_stride(dims.width(), rowbytes, pixel_size) * dims.height()
                 ],
             )
         },
@@ -1372,7 +1451,8 @@ fn read_exr(
               position,
               (r, g, b, a): (f32, f32, f32, f32)| {
             // Flip y and convert to flat index
-            let index = (height - 1 - position.y()) * get_image_stride(width, rowbytes)
+            let index = (height - 1 - position.y())
+                * get_image_stride(width, rowbytes, pixel_size)
                 + position.x();
             pixels[index] = Pixel { r, g, b, a };
         },
@@ -1394,22 +1474,96 @@ fn read_exr(
     Ok(Image::new(
         name,
         &bounds,
-        pixels,
-        get_image_stride(width, rowbytes),
+        ImagePixels::Rgba(pixels),
+        get_image_stride(width, rowbytes, pixel_size),
+    ))
+}
+
+fn read_exr_alpha(
+    name: &str,
+    path: &str,
+    rowbytes: Option<usize>,
+    origin: (i32, i32),
+) -> Result<Image> {
+    let pixel_size = std::mem::size_of::<f32>();
+
+    let (width, height, pixels) = read()
+        .no_deep_data()
+        .largest_resolution_level()
+        .specific_channels()
+        .required("Y")
+        .collect_pixels(
+            move |dims, _| {
+                (
+                    dims.width(),
+                    dims.height(),
+                    vec![
+                        0.0f32;
+                        get_image_stride(dims.width(), rowbytes, pixel_size)
+                            * dims.height()
+                    ],
+                )
+            },
+            move |&mut (width, height, ref mut pixels), position, (a,): (f32,)| {
+                let index = (height - 1 - position.y())
+                    * get_image_stride(width, rowbytes, pixel_size)
+                    + position.x();
+                pixels[index] = a;
+            },
+        )
+        .first_valid_layer()
+        .all_attributes()
+        .from_file(path)
+        .with_context(|| format!("Read EXR \"{}\"", path))?
+        .layer_data
+        .channel_data
+        .pixels;
+
+    let (x1, y1) = origin;
+    let bounds = OfxRectI {
+        x1,
+        y1,
+        x2: x1 + width as i32,
+        y2: y1 + height as i32,
+    };
+
+    Ok(Image::new(
+        name,
+        &bounds,
+        ImagePixels::Alpha(pixels),
+        get_image_stride(width, rowbytes, pixel_size),
     ))
 }
 
 fn write_exr(filename: &str, image: Image) -> GenericResult {
-    write_rgba_file(
-        filename,
-        image.bounds.width(),
-        image.bounds.height(),
-        |x, y| {
-            // Flip y and convert to flat index
-            let pixel = &image.pixels[(image.bounds.height() - 1 - y) * image.stride + x];
-            (pixel.r, pixel.g, pixel.b, pixel.a)
-        },
-    )?;
+    match &image.pixels {
+        ImagePixels::Rgba(pixels) => {
+            write_rgba_file(
+                filename,
+                image.bounds.width(),
+                image.bounds.height(),
+                |x, y| {
+                    // Flip y and convert to flat index
+                    let pixel =
+                        &pixels[(image.bounds.height() - 1 - y) * image.stride + x];
+                    (pixel.r, pixel.g, pixel.b, pixel.a)
+                },
+            )?;
+        }
+        ImagePixels::Alpha(pixels) => {
+            let width = image.bounds.width();
+            let height = image.bounds.height();
+            let stride = image.stride;
+            let channels = exr::image::SpecificChannels::build()
+                .with_channel::<f32>("A")
+                .with_pixel_fn(|exr::math::Vec2(x, y)| {
+                    (pixels[(height - 1 - y) * stride + x],)
+                });
+            exr::image::Image::from_channels((width, height), channels)
+                .write()
+                .to_file(filename)?;
+        }
+    }
 
     Ok(())
 }
@@ -1524,7 +1678,11 @@ impl CommandState {
                 (constants::ParamHostPropPageRowColumnCount, [0, 0].into()),
                 (
                     constants::ImageEffectPropSupportedComponents,
-                    constants::ImageComponentRGBA.into(),
+                    [
+                        constants::ImageComponentRGBA,
+                        constants::ImageComponentAlpha,
+                    ]
+                    .into(),
                 ),
                 (
                     constants::ImageEffectPropSupportedContexts,
@@ -2902,7 +3060,7 @@ mod test {
             &CreateInstance {
                 plugin_name: "uk.co.thefoundry.BasicGainPlugin".to_string(),
                 instance_name: "instance1".to_string(),
-                context: ImageEffectContext::Filter,
+                context: ImageEffectContext::General,
             },
             &mut state,
         )
@@ -3018,6 +3176,67 @@ mod test {
         assert_eq!(*frame, 0);
         assert_eq!(image.bounds.width(), 16);
         assert_eq!(image.bounds.height(), 10);
+        insta::assert_debug_snapshot!(image.pixels);
+    }
+
+    #[test]
+    fn render_mask() {
+        let _lock = COMMAND_MUTEX.lock().unwrap();
+
+        let mut state = set_up_basic_plugin();
+        let source_path = "test/colorbars.exr";
+        let mask_path = "test/circle.exr";
+
+        process_command(
+            &SetParams {
+                instance_name: "instance1".to_string(),
+                values: vec![("scale".to_string(), ParamValue::Double(2.0))],
+                call_instance_changed: false,
+            },
+            &mut state,
+        )
+        .unwrap();
+
+        let writer = CaptureWriter {
+            images: Default::default(),
+        };
+
+        let inputs = HashMap::from([
+            (
+                "Source".to_string(),
+                Input {
+                    filename: source_path.to_string(),
+                    rowbytes: None,
+                    origin: (0, 0),
+                },
+            ),
+            (
+                "Mask".to_string(),
+                Input {
+                    filename: mask_path.to_string(),
+                    rowbytes: Some(std::mem::size_of::<f32>() * (16)), // Pad to 16 pixels
+                    origin: (2, 3),
+                },
+            ),
+        ]);
+
+        render(
+            "instance1",
+            &inputs,
+            &writer,
+            None,
+            (FrameNumber(0), FrameNumber(1)),
+            1,
+            &mut state,
+        )
+        .unwrap();
+
+        let images = writer.images.lock().unwrap();
+        assert_eq!(images.len(), 1);
+        let (frame, image) = &images[0];
+        assert_eq!(*frame, 0);
+        assert_eq!(image.bounds.width(), 25);
+        assert_eq!(image.bounds.height(), 14);
         insta::assert_debug_snapshot!(image.pixels);
     }
 
@@ -3181,6 +3400,56 @@ mod test {
                 rowbytes: Some(std::mem::size_of::<Pixel>() * (32)), // Pad to 32 pixels
                 crop_inputs_to_roi: false,
             }),
+            (FrameNumber(0), FrameNumber(1)),
+            1,
+            &mut state,
+        )
+        .unwrap();
+
+        let images = writer.images.lock().unwrap();
+        assert_eq!(images.len(), 1);
+        let (frame, image) = &images[0];
+        assert_eq!(*frame, 0);
+        assert_eq!(image.bounds.width(), 25);
+        assert_eq!(image.bounds.height(), 14);
+        insta::assert_debug_snapshot!(image.pixels);
+    }
+
+    #[test]
+    fn render_alpha() {
+        let _lock = COMMAND_MUTEX.lock().unwrap();
+
+        let input_path = "test/alpha-bars.exr";
+        let mut state = set_up_basic_plugin();
+
+        process_command(
+            &SetParams {
+                instance_name: "instance1".to_string(),
+                values: vec![("scale".to_string(), ParamValue::Double(2.0))],
+                call_instance_changed: false,
+            },
+            &mut state,
+        )
+        .unwrap();
+
+        let writer = CaptureWriter {
+            images: Default::default(),
+        };
+
+        let inputs = HashMap::from([(
+            "Source".to_string(),
+            Input {
+                filename: input_path.to_string(),
+                rowbytes: None,
+                origin: (0, 0),
+            },
+        )]);
+
+        render(
+            "instance1",
+            &inputs,
+            &writer,
+            None,
             (FrameNumber(0), FrameNumber(1)),
             1,
             &mut state,
