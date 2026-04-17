@@ -127,4 +127,6 @@ pub enum Command {
     SetHostProperties {
         props: HashMap<String, Vec<PropertyValue>>,
     },
+    /// Write a message to the output stream
+    Log { message: String },
 }

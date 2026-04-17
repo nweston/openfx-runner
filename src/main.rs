@@ -2611,6 +2611,10 @@ fn process_command(command: &Command, state: &mut CommandState) -> GenericResult
             set_host_properties(props, state);
             Ok(())
         }
+        Log { message } => {
+            output!("{{\"log\": \"{}\"}}", message);
+            Ok(())
+        }
     }
 }
 
