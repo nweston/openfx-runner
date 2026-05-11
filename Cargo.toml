@@ -35,9 +35,14 @@ serde_json = "1.0.96"
 openfx-rs = {version = "0.1.0", features = ["derive_serde"] }
 openfx-sys = "0.1.0"
 anyhow = "1.0.99"
+objc2 = { version = "0.6.4", optional = true }
+objc2-metal = { version = "0.3.2", optional = true }
 
 [build-dependencies]
 cc = "1.0"
 
 [dev-dependencies]
 insta = "1.47.2"
+
+[features]
+metal = ["dep:objc2", "dep:objc2-metal"]

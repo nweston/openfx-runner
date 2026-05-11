@@ -81,6 +81,8 @@ pub enum Command {
         frame_range: (FrameNumber, FrameNumber),
         #[serde(default)]
         thread_count: u32,
+        #[serde(default)]
+        metal_enabled: bool,
     },
     /// Print params of an effect instance.
     PrintParams { instance_name: String },

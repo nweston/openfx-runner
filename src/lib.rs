@@ -30,6 +30,16 @@ mod handles;
 use handles::*;
 mod suite_impls;
 
+#[cfg(feature = "metal")]
+mod metal;
+#[cfg(feature = "metal")]
+use metal::{empty_gpu_storage, gpu_storage_from_image, GpuContext};
+
+#[cfg(not(feature = "metal"))]
+mod gpu_stubs;
+#[cfg(not(feature = "metal"))]
+use gpu_stubs::{empty_gpu_storage, gpu_storage_from_image, GpuContext};
+
 /// An integer frame time
 #[derive(Deserialize, Serialize, Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct FrameNumber(u32);
@@ -422,6 +432,8 @@ enum ImagePixels<'a> {
 /// memory, a MTLBuffer, etc. Contents are not directly visible to
 /// Rust code.
 trait PixelStorage: Send + std::fmt::Debug {
+    #[allow(dead_code)] // Only used if GPU is enabled
+    fn as_ptr(&self) -> *const c_void;
     fn as_mut_ptr(&mut self) -> *mut c_void;
     unsafe fn offset_ptr(&self, byte_offset: isize) -> *const c_void;
     fn format(&self) -> ImageFormat;
@@ -432,6 +444,10 @@ trait PixelStorage: Send + std::fmt::Debug {
 struct RgbaVecStorage(Vec<Pixel>);
 
 impl PixelStorage for RgbaVecStorage {
+    fn as_ptr(&self) -> *const c_void {
+        self.0.as_ptr() as _
+    }
+
     fn as_mut_ptr(&mut self) -> *mut c_void {
         self.0.as_mut_ptr() as _
     }
@@ -453,6 +469,10 @@ impl PixelStorage for RgbaVecStorage {
 struct AlphaVecStorage(Vec<f32>);
 
 impl PixelStorage for AlphaVecStorage {
+    fn as_ptr(&self) -> *const c_void {
+        self.0.as_ptr() as _
+    }
+
     fn as_mut_ptr(&mut self) -> *mut c_void {
         self.0.as_mut_ptr() as _
     }
@@ -528,16 +548,23 @@ impl Image {
         bounds: &OfxRectI,
         rowbytes: Option<usize>,
         format: ImageFormat,
+        metal_enabled: bool,
+        gpu_context: GpuContext,
     ) -> Self {
         let stride = get_image_stride(bounds.width(), rowbytes, format.bytes_per_pixel());
-        let pixels: Box<dyn PixelStorage> = match format {
-            ImageFormat::Alpha => {
-                Box::new(AlphaVecStorage(vec![0.0f32; stride * bounds.height()]))
+        let pixels: Box<dyn PixelStorage> = if metal_enabled {
+            empty_gpu_storage(format, stride * bounds.height(), &gpu_context)
+        } else {
+            match format {
+                ImageFormat::Alpha => {
+                    Box::new(AlphaVecStorage(vec![0.0f32; stride * bounds.height()]))
+                }
+                ImageFormat::Rgba => Box::new(RgbaVecStorage(vec![
+                    Pixel::zero();
+                    stride
+                        * bounds.height()
+                ])),
             }
-            ImageFormat::Rgba => Box::new(RgbaVecStorage(vec![
-                Pixel::zero();
-                stride * bounds.height()
-            ])),
         };
 
         Self::new(name, bounds, pixels, stride)
@@ -578,6 +605,8 @@ enum ClipImages {
         bounds: OfxRectI,
         rowbytes: Option<usize>,
         format: ImageFormat,
+        metal_enabled: bool,
+        gpu_context: GpuContext,
     },
 }
 
@@ -600,11 +629,18 @@ impl ClipImages {
                 bounds,
                 rowbytes,
                 format,
-            } => Some(
-                images
-                    .entry(frame)
-                    .or_insert_with(|| Image::empty(name, bounds, *rowbytes, *format)),
-            ),
+                metal_enabled,
+                gpu_context,
+            } => Some(images.entry(frame).or_insert_with(|| {
+                Image::empty(
+                    name,
+                    bounds,
+                    *rowbytes,
+                    *format,
+                    *metal_enabled,
+                    gpu_context.clone(),
+                )
+            })),
             ClipImages::NoImage => None,
         }
     }
@@ -895,7 +931,7 @@ impl Plugin {
 
 /// An opaque memory address. Used for pointer properties which are
 /// never dereferenced by the host, but only pass back to the plugin.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 struct Addr(*const c_void);
 unsafe impl Send for Addr {}
 
@@ -1413,6 +1449,8 @@ fn create_images(
     project_dims: Property,
     output_rect: &OfxRectI,
     output_rowbytes: Option<usize>,
+    metal_enabled: bool,
+    gpu_context: GpuContext,
 ) -> GenericResult {
     effect.properties.lock().values.insert(
         constants::ImageEffectPropProjectSize.to_string(),
@@ -1440,6 +1478,8 @@ fn create_images(
         bounds: *output_rect,
         rowbytes: output_rowbytes,
         format: output_format,
+        metal_enabled,
+        gpu_context,
     };
     Ok(())
 }
@@ -1637,6 +1677,7 @@ struct CommandState {
     host: OfxHost,
     plugins: HashMap<String, LoadedPlugin>,
     instances: HashMap<String, Instance>,
+    gpu_context: GpuContext,
 }
 
 impl CommandState {
@@ -1716,7 +1757,12 @@ impl CommandState {
                 ),
                 (
                     constants::ImageEffectPropMetalRenderSupported,
-                    "false".into(),
+                    if cfg!(feature = "metal") {
+                        "true"
+                    } else {
+                        "false"
+                    }
+                    .into(),
                 ),
                 (constants::ImageEffectPropRenderQualityDraft, false.into()),
                 (constants::ParamHostPropMaxParameters, (-1).into()),
@@ -1758,6 +1804,7 @@ impl CommandState {
             },
             plugins: HashMap::new(),
             instances: HashMap::new(),
+            gpu_context: GpuContext::new(),
         }
     }
 
@@ -1987,8 +2034,28 @@ fn get_output_rect(
     })
 }
 
-fn get_input_image(name: &str, input: &Input) -> Result<Image> {
-    read_exr(name, &input.filename, input.rowbytes, input.origin)
+fn copy_image_to_gpu(image: &Image, gpu_context: GpuContext) -> Image {
+    Image::new(
+        "gpu_image",
+        &image.bounds,
+        gpu_storage_from_image(image, &gpu_context),
+        image.stride,
+    )
+}
+
+fn get_input_image(
+    name: &str,
+    input: &Input,
+    metal_enabled: bool,
+    gpu_context: GpuContext,
+) -> Result<Image> {
+    read_exr(name, &input.filename, input.rowbytes, input.origin).map(|image| {
+        if metal_enabled {
+            copy_image_to_gpu(&image, gpu_context)
+        } else {
+            image
+        }
+    })
 }
 
 trait ImageWriter {
@@ -2023,6 +2090,28 @@ impl ImageWriter for ExrWriter {
     }
 }
 
+fn check_metal_support(plugin: &LoadedPlugin, metal_enabled: bool) -> GenericResult {
+    if metal_enabled {
+        if !cfg!(feature = "metal") {
+            bail!("Metal support is not available.");
+        }
+
+        let true_string = PropertyValue::String(CString::new("true").unwrap());
+        let plugin_supports_metal = plugin
+            .descriptor
+            .lock()
+            .properties
+            .lock()
+            .get(constants::ImageEffectPropMetalRenderSupported, 0)
+            .cloned()
+            .ok();
+        if plugin_supports_metal != Some(true_string) {
+            bail!("Plugin does not support Metal renders.")
+        }
+    }
+    Ok(())
+}
+
 fn render<W: ImageWriter + Sync>(
     instance_name: &str,
     inputs: &HashMap<String, Input>,
@@ -2030,6 +2119,7 @@ fn render<W: ImageWriter + Sync>(
     layout: Option<&RenderLayout>,
     frame_range: (FrameNumber, FrameNumber),
     thread_count: u32,
+    metal_enabled: bool,
     state: &mut CommandState,
 ) -> GenericResult {
     let (FrameNumber(frame_min), FrameNumber(frame_limit)) = frame_range;
@@ -2039,11 +2129,13 @@ fn render<W: ImageWriter + Sync>(
 
     let instance = state.get_instance(instance_name)?;
     let plugin = state.get_plugin(&instance.plugin_name)?;
+    check_metal_support(plugin, metal_enabled)?;
 
     let input_images = inputs
         .iter()
         .map(|(name, input)| {
-            get_input_image(name, input).map(|image| (name.clone(), image))
+            get_input_image(name, input, metal_enabled, state.gpu_context.clone())
+                .map(|image| (name.clone(), image))
         })
         .collect::<Result<HashMap<_, _>>>()
         .with_context(|| "Reading input images")?;
@@ -2085,9 +2177,14 @@ fn render<W: ImageWriter + Sync>(
         project_dims.into(),
         &output_rect,
         layout.and_then(|l| l.rowbytes),
+        metal_enabled,
+        state.gpu_context.clone(),
     )?;
 
     instance.effect.lock().check_required_inputs()?;
+
+    #[cfg(feature = "metal")]
+    let queue = Addr(state.gpu_context.queue_ptr());
 
     let render_range = move |start, limit| -> GenericResult {
         for frame in start..limit {
@@ -2113,6 +2210,12 @@ fn render<W: ImageWriter + Sync>(
                         false.into(),
                     ),
                     (constants::ImageEffectPropRenderQualityDraft, false.into()),
+                    #[cfg(feature = "metal")]
+                    (
+                        constants::ImageEffectPropMetalCommandQueue,
+                        PropertyValue::Pointer(queue).into(),
+                    ),
+                    (constants::ImageEffectPropMetalEnabled, metal_enabled.into()),
                 ],
             )
             .into_object();
@@ -2577,6 +2680,7 @@ fn process_command(command: &Command, state: &mut CommandState) -> GenericResult
             layout,
             frame_range,
             thread_count,
+            metal_enabled,
         } => {
             if let Some(dir) = output_directory {
                 std::fs::create_dir_all(dir)?;
@@ -2590,6 +2694,7 @@ fn process_command(command: &Command, state: &mut CommandState) -> GenericResult
                 layout.as_ref(),
                 *frame_range,
                 *thread_count,
+                *metal_enabled,
                 state,
             )
             .context("Render")
@@ -3177,6 +3282,7 @@ mod test {
             None,
             (FrameNumber(0), FrameNumber(1)),
             1,
+            false,
             &mut state,
         )
         .unwrap();
@@ -3237,6 +3343,7 @@ mod test {
             }),
             (FrameNumber(0), FrameNumber(1)),
             1,
+            false,
             &mut state,
         )
         .unwrap();
@@ -3298,6 +3405,7 @@ mod test {
             None,
             (FrameNumber(0), FrameNumber(1)),
             1,
+            false,
             &mut state,
         )
         .unwrap();
@@ -3353,6 +3461,7 @@ mod test {
             }),
             (FrameNumber(0), FrameNumber(1)),
             1,
+            false,
             &mut state,
         )
         .unwrap();
@@ -3413,6 +3522,7 @@ mod test {
             }),
             (FrameNumber(0), FrameNumber(1)),
             1,
+            false,
             &mut state,
         )
         .unwrap();
@@ -3473,6 +3583,7 @@ mod test {
             }),
             (FrameNumber(0), FrameNumber(1)),
             1,
+            false,
             &mut state,
         )
         .unwrap();
@@ -3523,6 +3634,7 @@ mod test {
             None,
             (FrameNumber(0), FrameNumber(1)),
             1,
+            false,
             &mut state,
         )
         .unwrap();
