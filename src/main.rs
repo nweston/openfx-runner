@@ -2854,14 +2854,19 @@ mod test {
 
     #[test]
     fn no_exe() {
-        assert_eq!(
-            Bundle::new("test/NoExe.ofx.bundle".into())
-                .unwrap()
-                .load()
-                .unwrap_err()
+        let result = Bundle::new("test/NoExe.ofx.bundle".into()).unwrap().load();
+
+        if cfg!(target_os = "linux") {
+            assert_eq!(
+            result.unwrap_err()
                 .to_string(),
             "test/NoExe.ofx.bundle/Contents/Linux-x86-64/test.ofx: cannot open shared object file: No such file or directory"
         );
+        } else {
+            // Specific error message will vary depending on OS,
+            // the important thing is that it fails
+            assert!(result.is_err());
+        }
     }
 
     #[test]
@@ -2952,22 +2957,38 @@ mod test {
         {
             let path = example_lib_path(exe, "no_functions");
             let lib = unsafe { libloading::Library::new(&path).unwrap() };
-            assert_eq!(
-                get_plugins(&lib).unwrap_err().to_string(),
-                format!(
-                    "{}: undefined symbol: OfxGetNumberOfPlugins",
-                    path.display()
-                )
-            );
+            let result = get_plugins(&lib);
+
+            if cfg!(target_os = "linux") {
+                assert_eq!(
+                    result.unwrap_err().to_string(),
+                    format!(
+                        "{}: undefined symbol: OfxGetNumberOfPlugins",
+                        path.display()
+                    )
+                );
+            } else {
+                // Specific error message will vary depending on OS,
+                // the important thing is that it fails
+                assert!(result.is_err());
+            }
         }
 
         {
             let path = example_lib_path(exe, "no_getplugin");
             let lib = unsafe { libloading::Library::new(&path).unwrap() };
-            assert_eq!(
-                get_plugins(&lib).unwrap_err().to_string(),
-                format!("{}: undefined symbol: OfxGetPlugin", path.display())
-            );
+            let result = get_plugins(&lib);
+
+            if cfg!(target_os = "linux") {
+                assert_eq!(
+                    result.unwrap_err().to_string(),
+                    format!("{}: undefined symbol: OfxGetPlugin", path.display())
+                );
+            } else {
+                // Specific error message will vary depending on OS,
+                // the important thing is that it fails
+                assert!(result.is_err());
+            }
         }
     }
 
