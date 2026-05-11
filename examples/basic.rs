@@ -36,12 +36,6 @@ unsafe extern "C" {
         __s1: *const ::core::ffi::c_char,
         __s2: *const ::core::ffi::c_char,
     ) -> ::core::ffi::c_int;
-    fn __assert_fail(
-        __assertion: *const ::core::ffi::c_char,
-        __file: *const ::core::ffi::c_char,
-        __line: ::core::ffi::c_uint,
-        __function: *const ::core::ffi::c_char,
-    ) -> !;
 }
 pub type size_t = usize;
 pub type OfxPropertySetHandle = *mut OfxPropertySetStruct;
@@ -1247,15 +1241,7 @@ unsafe extern "C" fn defineScaleParam(
         name,
         &raw mut props,
     );
-    if stat == 0 as ::core::ffi::c_int {
-    } else {
-        __assert_fail(
-            b"stat == kOfxStatOK\0" as *const u8 as *const ::core::ffi::c_char,
-            b"basic.c\0" as *const u8 as *const ::core::ffi::c_char,
-            561 as ::core::ffi::c_uint,
-            __ASSERT_FUNCTION.as_ptr(),
-        );
-    };
+    assert!(stat == 0);
     (*gPropHost)
         .propSetString
         .expect("non-null function pointer")(
