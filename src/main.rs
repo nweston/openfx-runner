@@ -387,6 +387,28 @@ impl Pixel {
     }
 }
 
+#[derive(Copy, Clone, Debug)]
+enum ImageFormat {
+    Alpha,
+    Rgba,
+}
+
+impl ImageFormat {
+    fn bytes_per_pixel(&self) -> usize {
+        match self {
+            ImageFormat::Rgba => std::mem::size_of::<Pixel>(),
+            ImageFormat::Alpha => std::mem::size_of::<f32>(),
+        }
+    }
+
+    fn components(&self) -> OfxStr<'static> {
+        match self {
+            ImageFormat::Rgba => constants::ImageComponentRGBA,
+            ImageFormat::Alpha => constants::ImageComponentAlpha,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 enum ImagePixels {
     Rgba(Vec<Pixel>),
@@ -400,25 +422,12 @@ impl ImagePixels {
             ImagePixels::Alpha(v) => v.as_mut_ptr() as _,
         }
     }
-
-    fn bytes_per_pixel(&self) -> usize {
-        match self {
-            ImagePixels::Rgba(_) => std::mem::size_of::<Pixel>(),
-            ImagePixels::Alpha(_) => std::mem::size_of::<f32>(),
-        }
-    }
-
-    fn component_str(&self) -> OfxStr<'static> {
-        match self {
-            ImagePixels::Rgba(_) => constants::ImageComponentRGBA,
-            ImagePixels::Alpha(_) => constants::ImageComponentAlpha,
-        }
-    }
 }
 
 #[derive(Clone, Debug)]
 pub struct Image {
     bounds: OfxRectI,
+    format: ImageFormat,
     pixels: ImagePixels,
     stride: usize,
     properties: Object<PropertySet>,
@@ -428,6 +437,7 @@ impl Image {
     fn new(
         name: &str,
         bounds: &OfxRectI,
+        format: ImageFormat,
         mut pixels: ImagePixels,
         stride: usize,
     ) -> Self {
@@ -441,7 +451,7 @@ impl Image {
                 ),
                 (
                     constants::ImageEffectPropComponents,
-                    pixels.component_str().into(),
+                    format.components().into(),
                 ),
                 (
                     constants::ImageEffectPropPreMultiplication,
@@ -454,7 +464,7 @@ impl Image {
                 (constants::ImagePropRegionOfDefinition, bounds.into()),
                 (
                     constants::ImagePropRowBytes,
-                    (stride * pixels.bytes_per_pixel()).into(),
+                    (stride * format.bytes_per_pixel()).into(),
                 ),
                 (constants::ImagePropField, constants::ImageFieldNone.into()),
             ],
@@ -462,6 +472,7 @@ impl Image {
         .into_object();
         Self {
             bounds: *bounds,
+            format,
             pixels,
             stride,
             properties,
@@ -472,21 +483,19 @@ impl Image {
         name: &str,
         bounds: &OfxRectI,
         rowbytes: Option<usize>,
-        alpha: bool,
+        format: ImageFormat,
     ) -> Self {
-        let pixel_size = if alpha {
-            std::mem::size_of::<f32>()
-        } else {
-            std::mem::size_of::<Pixel>()
-        };
-        let stride = get_image_stride(bounds.width(), rowbytes, pixel_size);
-        let pixels = if alpha {
-            ImagePixels::Alpha(vec![0.0f32; stride * bounds.height()])
-        } else {
-            ImagePixels::Rgba(vec![Pixel::zero(); stride * bounds.height()])
+        let stride = get_image_stride(bounds.width(), rowbytes, format.bytes_per_pixel());
+        let pixels = match format {
+            ImageFormat::Alpha => {
+                ImagePixels::Alpha(vec![0.0f32; stride * bounds.height()])
+            }
+            ImageFormat::Rgba => {
+                ImagePixels::Rgba(vec![Pixel::zero(); stride * bounds.height()])
+            }
         };
 
-        Self::new(name, bounds, pixels, stride)
+        Self::new(name, bounds, format, pixels, stride)
     }
 
     // Adjust bounds and data pointer so image appears cropped to
@@ -528,7 +537,7 @@ enum ClipImages {
         name: &'static str,
         bounds: OfxRectI,
         rowbytes: Option<usize>,
-        alpha: bool,
+        format: ImageFormat,
     },
 }
 
@@ -550,11 +559,11 @@ impl ClipImages {
                 name,
                 bounds,
                 rowbytes,
-                alpha,
+                format,
             } => Some(
                 images
                     .entry(frame)
-                    .or_insert_with(|| Image::empty(name, bounds, *rowbytes, *alpha)),
+                    .or_insert_with(|| Image::empty(name, bounds, *rowbytes, *format)),
             ),
             ClipImages::NoImage => None,
         }
@@ -587,7 +596,7 @@ impl Clip {
         self.properties.lock().set(
             constants::ImageEffectPropComponents.as_str(),
             0,
-            image.pixels.component_str().into(),
+            image.format.components().into(),
         );
         self.region_of_definition = Some(OfxRectD {
             x1: 0.0,
@@ -1378,10 +1387,10 @@ fn create_images(
     );
 
     // TODO: call getClipPreferences action to determine output format
-    let output_alpha = inputs
+    let output_format = inputs
         .get("Source")
-        .map(|img| matches!(img.pixels, ImagePixels::Alpha(_)))
-        .unwrap_or(false);
+        .map(|img| img.format)
+        .unwrap_or(ImageFormat::Rgba);
 
     for (name, image) in inputs {
         effect.get_clip(&name)?.lock().set_image(image);
@@ -1393,7 +1402,7 @@ fn create_images(
         name: "Output",
         bounds: *output_rect,
         rowbytes: output_rowbytes,
-        alpha: output_alpha,
+        format: output_format,
     };
     Ok(())
 }
@@ -1474,6 +1483,7 @@ fn read_exr_rgba(
     Ok(Image::new(
         name,
         &bounds,
+        ImageFormat::Rgba,
         ImagePixels::Rgba(pixels),
         get_image_stride(width, rowbytes, pixel_size),
     ))
@@ -1530,6 +1540,7 @@ fn read_exr_alpha(
     Ok(Image::new(
         name,
         &bounds,
+        ImageFormat::Alpha,
         ImagePixels::Alpha(pixels),
         get_image_stride(width, rowbytes, pixel_size),
     ))
