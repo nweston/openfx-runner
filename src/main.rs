@@ -424,7 +424,7 @@ impl ImagePixels {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Image {
     bounds: OfxRectI,
     format: ImageFormat,
@@ -527,7 +527,7 @@ impl Image {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 enum ClipImages {
     NoImage,
     Static(Image),
@@ -668,15 +668,16 @@ impl Clip {
                 .collect::<Vec<_>>()
         );
     }
-}
 
-impl Clone for Clip {
-    fn clone(&self) -> Self {
+    /// Create a clip instance from a clip descriptor.
+    /// The resulting instance will not have any images, but is
+    /// otherwise a copy of self
+    fn create_instance(&self) -> Self {
         // Deep copy the properties
         Self {
             name: self.name.clone(),
             properties: self.properties.lock().clone().into_object(),
-            images: self.images.clone(),
+            images: ClipImages::NoImage,
             region_of_definition: self.region_of_definition,
         }
     }
@@ -1308,15 +1309,6 @@ fn get_plugins(lib: &libloading::Library) -> Result<Vec<Plugin>> {
     Ok(plugins)
 }
 
-fn copy_map<T>(h: &HashMap<String, Object<T>>) -> HashMap<String, Object<T>>
-where
-    T: Clone + IntoObject,
-{
-    h.iter()
-        .map(|(key, val)| (key.clone(), val.lock().clone().into_object()))
-        .collect()
-}
-
 fn create_params(descriptors: &[Object<PropertySet>]) -> HashMap<String, Object<Param>> {
     descriptors
         .iter()
@@ -1331,7 +1323,12 @@ fn create_params(descriptors: &[Object<PropertySet>]) -> HashMap<String, Object<
 }
 
 fn create_instance(descriptor: &ImageEffect, context: &str) -> ImageEffect {
-    let clips = copy_map(&descriptor.clips);
+    let clips = descriptor
+        .clips
+        .iter()
+        .map(|(key, val)| (key.clone(), val.lock().create_instance().into_object()))
+        .collect::<HashMap<_, _>>();
+
     let properties = PropertySet::new(
         "instance",
         &[
