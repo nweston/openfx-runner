@@ -409,26 +409,71 @@ impl ImageFormat {
     }
 }
 
-#[derive(Clone, Debug)]
-enum ImagePixels {
-    Rgba(Vec<Pixel>),
-    Alpha(Vec<f32>),
+/// Typed reference to pixel data
+#[derive(Debug)]
+enum ImagePixels<'a> {
+    Rgba(&'a [Pixel]),
+    Alpha(&'a [f32]),
 }
 
-impl ImagePixels {
+/// Opaque storage for image pixel data
+///
+/// Provides a pointer for access by plugins: this may point to CPU
+/// memory, a MTLBuffer, etc. Contents are not directly visible to
+/// Rust code.
+trait PixelStorage: Send + std::fmt::Debug {
+    fn as_mut_ptr(&mut self) -> *mut c_void;
+    unsafe fn offset_ptr(&self, byte_offset: isize) -> *const c_void;
+    fn format(&self) -> ImageFormat;
+    fn as_pixels(&self) -> ImagePixels;
+}
+
+#[derive(Debug)]
+struct RgbaVecStorage(Vec<Pixel>);
+
+impl PixelStorage for RgbaVecStorage {
     fn as_mut_ptr(&mut self) -> *mut c_void {
-        match self {
-            ImagePixels::Rgba(v) => v.as_mut_ptr() as _,
-            ImagePixels::Alpha(v) => v.as_mut_ptr() as _,
-        }
+        self.0.as_mut_ptr() as _
+    }
+
+    unsafe fn offset_ptr(&self, byte_offset: isize) -> *const c_void {
+        unsafe { (self.0.as_ptr() as *mut c_char).offset(byte_offset) as _ }
+    }
+
+    fn format(&self) -> ImageFormat {
+        ImageFormat::Rgba
+    }
+
+    fn as_pixels(&self) -> ImagePixels {
+        ImagePixels::Rgba(&self.0)
+    }
+}
+
+#[derive(Debug)]
+struct AlphaVecStorage(Vec<f32>);
+
+impl PixelStorage for AlphaVecStorage {
+    fn as_mut_ptr(&mut self) -> *mut c_void {
+        self.0.as_mut_ptr() as _
+    }
+
+    unsafe fn offset_ptr(&self, byte_offset: isize) -> *const c_void {
+        unsafe { (self.0.as_ptr() as *mut c_char).offset(byte_offset) as _ }
+    }
+
+    fn format(&self) -> ImageFormat {
+        ImageFormat::Alpha
+    }
+
+    fn as_pixels(&self) -> ImagePixels {
+        ImagePixels::Alpha(&self.0)
     }
 }
 
 #[derive(Debug)]
 pub struct Image {
     bounds: OfxRectI,
-    format: ImageFormat,
-    pixels: ImagePixels,
+    data: Box<dyn PixelStorage>,
     stride: usize,
     properties: Object<PropertySet>,
 }
@@ -437,10 +482,10 @@ impl Image {
     fn new(
         name: &str,
         bounds: &OfxRectI,
-        format: ImageFormat,
-        mut pixels: ImagePixels,
+        mut pixels: Box<dyn PixelStorage>,
         stride: usize,
     ) -> Self {
+        let format = pixels.format();
         let properties = PropertySet::new(
             &format!("{}_image", name),
             &[
@@ -472,8 +517,7 @@ impl Image {
         .into_object();
         Self {
             bounds: *bounds,
-            format,
-            pixels,
+            data: pixels,
             stride,
             properties,
         }
@@ -486,16 +530,17 @@ impl Image {
         format: ImageFormat,
     ) -> Self {
         let stride = get_image_stride(bounds.width(), rowbytes, format.bytes_per_pixel());
-        let pixels = match format {
+        let pixels: Box<dyn PixelStorage> = match format {
             ImageFormat::Alpha => {
-                ImagePixels::Alpha(vec![0.0f32; stride * bounds.height()])
+                Box::new(AlphaVecStorage(vec![0.0f32; stride * bounds.height()]))
             }
-            ImageFormat::Rgba => {
-                ImagePixels::Rgba(vec![Pixel::zero(); stride * bounds.height()])
-            }
+            ImageFormat::Rgba => Box::new(RgbaVecStorage(vec![
+                Pixel::zero();
+                stride * bounds.height()
+            ])),
         };
 
-        Self::new(name, bounds, format, pixels, stride)
+        Self::new(name, bounds, pixels, stride)
     }
 
     // Adjust bounds and data pointer so image appears cropped to
@@ -509,16 +554,11 @@ impl Image {
             y2: min(bounds.y2, self.bounds.y2),
         };
 
-        let offset = self.bounds.width() as isize * (bounds.y1 - self.bounds.y1) as isize
-            + (bounds.x1 - self.bounds.x1) as isize;
-        let data = unsafe {
-            let ptr = match &self.pixels {
-                ImagePixels::Rgba(v) => v.as_ptr().offset(offset) as *const c_void,
-                ImagePixels::Alpha(v) => v.as_ptr().offset(offset) as *const c_void,
-            };
-            PropertyValue::Pointer(Addr(ptr as _))
-        };
-
+        let offset = (self.bounds.width() as isize
+            * (bounds.y1 - self.bounds.y1) as isize
+            + (bounds.x1 - self.bounds.x1) as isize)
+            * self.data.format().bytes_per_pixel() as isize;
+        let data = PropertyValue::Pointer(Addr(unsafe { self.data.offset_ptr(offset) }));
         let mut props = self.properties.lock();
         props
             .values
@@ -596,7 +636,7 @@ impl Clip {
         self.properties.lock().set(
             constants::ImageEffectPropComponents.as_str(),
             0,
-            image.format.components().into(),
+            image.data.format().components().into(),
         );
         self.region_of_definition = Some(OfxRectD {
             x1: 0.0,
@@ -1386,7 +1426,7 @@ fn create_images(
     // TODO: call getClipPreferences action to determine output format
     let output_format = inputs
         .get("Source")
-        .map(|img| img.format)
+        .map(|img| img.data.format())
         .unwrap_or(ImageFormat::Rgba);
 
     for (name, image) in inputs {
@@ -1435,7 +1475,7 @@ fn read_exr_rgba(
     // read_first_rgba_layer_from_file can't return a separate
     // rowbytes/stride value, so we have to return the width and
     // recalculate stride several times.
-    let pixel_size = std::mem::size_of::<Pixel>();
+    let pixel_size = ImageFormat::Rgba.bytes_per_pixel();
 
     let (width, height, pixels) = read_first_rgba_layer_from_file(
         path,
@@ -1480,8 +1520,7 @@ fn read_exr_rgba(
     Ok(Image::new(
         name,
         &bounds,
-        ImageFormat::Rgba,
-        ImagePixels::Rgba(pixels),
+        Box::new(RgbaVecStorage(pixels)),
         get_image_stride(width, rowbytes, pixel_size),
     ))
 }
@@ -1492,7 +1531,7 @@ fn read_exr_alpha(
     rowbytes: Option<usize>,
     origin: (i32, i32),
 ) -> Result<Image> {
-    let pixel_size = std::mem::size_of::<f32>();
+    let pixel_size = ImageFormat::Alpha.bytes_per_pixel();
 
     let (width, height, pixels) = read()
         .no_deep_data()
@@ -1537,14 +1576,13 @@ fn read_exr_alpha(
     Ok(Image::new(
         name,
         &bounds,
-        ImageFormat::Alpha,
-        ImagePixels::Alpha(pixels),
+        Box::new(AlphaVecStorage(pixels)),
         get_image_stride(width, rowbytes, pixel_size),
     ))
 }
 
 fn write_exr(filename: &str, image: Image) -> GenericResult {
-    match &image.pixels {
+    match image.data.as_pixels() {
         ImagePixels::Rgba(pixels) => {
             write_rgba_file(
                 filename,
@@ -3149,7 +3187,7 @@ mod test {
         assert_eq!(*frame, 0);
         assert_eq!(image.bounds.width(), 25);
         assert_eq!(image.bounds.height(), 14);
-        insta::assert_debug_snapshot!(image.pixels);
+        insta::assert_debug_snapshot!(image.data.as_pixels());
     }
 
     #[test]
@@ -3209,7 +3247,7 @@ mod test {
         assert_eq!(*frame, 0);
         assert_eq!(image.bounds.width(), 16);
         assert_eq!(image.bounds.height(), 10);
-        insta::assert_debug_snapshot!(image.pixels);
+        insta::assert_debug_snapshot!(image.data.as_pixels());
     }
 
     #[test]
@@ -3270,7 +3308,7 @@ mod test {
         assert_eq!(*frame, 0);
         assert_eq!(image.bounds.width(), 25);
         assert_eq!(image.bounds.height(), 14);
-        insta::assert_debug_snapshot!(image.pixels);
+        insta::assert_debug_snapshot!(image.data.as_pixels());
     }
 
     #[test]
@@ -3325,7 +3363,7 @@ mod test {
         assert_eq!(*frame, 0);
         assert_eq!(image.bounds.width(), 29);
         assert_eq!(image.bounds.height(), 20);
-        insta::assert_debug_snapshot!(image.pixels);
+        insta::assert_debug_snapshot!(image.data.as_pixels());
     }
 
     #[test]
@@ -3385,7 +3423,7 @@ mod test {
         assert_eq!(*frame, 0);
         assert_eq!(image.bounds.width(), 25);
         assert_eq!(image.bounds.height(), 14);
-        insta::assert_debug_snapshot!(image.pixels);
+        insta::assert_debug_snapshot!(image.data.as_pixels());
     }
 
     #[test]
@@ -3445,7 +3483,7 @@ mod test {
         assert_eq!(*frame, 0);
         assert_eq!(image.bounds.width(), 25);
         assert_eq!(image.bounds.height(), 14);
-        insta::assert_debug_snapshot!(image.pixels);
+        insta::assert_debug_snapshot!(image.data.as_pixels());
     }
 
     #[test]
@@ -3495,7 +3533,7 @@ mod test {
         assert_eq!(*frame, 0);
         assert_eq!(image.bounds.width(), 25);
         assert_eq!(image.bounds.height(), 14);
-        insta::assert_debug_snapshot!(image.pixels);
+        insta::assert_debug_snapshot!(image.data.as_pixels());
     }
 
     #[test]
