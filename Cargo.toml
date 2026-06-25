@@ -46,3 +46,6 @@ insta = "1.47.2"
 
 [features]
 metal = ["dep:objc2", "dep:objc2-metal"]
+
+[lints.clippy]
+too_many_arguments = "allow"
