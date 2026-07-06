@@ -35,9 +35,14 @@ mod metal;
 #[cfg(feature = "metal")]
 use metal::GpuContext;
 
-#[cfg(not(feature = "metal"))]
+#[cfg(feature = "cuda")]
+mod cuda;
+#[cfg(feature = "cuda")]
+use cuda::GpuContext;
+
+#[cfg(not(any(feature = "metal", feature = "cuda")))]
 mod gpu_stubs;
-#[cfg(not(feature = "metal"))]
+#[cfg(not(any(feature = "metal", feature = "cuda")))]
 use gpu_stubs::GpuContext;
 
 /// An integer frame time
@@ -548,11 +553,11 @@ impl Image {
         bounds: &OfxRectI,
         rowbytes: Option<usize>,
         format: ImageFormat,
-        metal_enabled: bool,
+        gpu_enabled: bool,
         gpu_context: GpuContext,
     ) -> Self {
         let stride = get_image_stride(bounds.width(), rowbytes, format.bytes_per_pixel());
-        let pixels: Box<dyn PixelStorage> = if metal_enabled {
+        let pixels: Box<dyn PixelStorage> = if gpu_enabled {
             gpu_context.empty_storage(format, stride * bounds.height())
         } else {
             match format {
@@ -605,7 +610,7 @@ enum ClipImages {
         bounds: OfxRectI,
         rowbytes: Option<usize>,
         format: ImageFormat,
-        metal_enabled: bool,
+        gpu_enabled: bool,
         gpu_context: GpuContext,
     },
 }
@@ -629,7 +634,7 @@ impl ClipImages {
                 bounds,
                 rowbytes,
                 format,
-                metal_enabled,
+                gpu_enabled,
                 gpu_context,
             } => Some(images.entry(frame).or_insert_with(|| {
                 Image::empty(
@@ -637,7 +642,7 @@ impl ClipImages {
                     bounds,
                     *rowbytes,
                     *format,
-                    *metal_enabled,
+                    *gpu_enabled,
                     gpu_context.clone(),
                 )
             })),
@@ -1449,7 +1454,7 @@ fn create_images(
     project_dims: Property,
     output_rect: &OfxRectI,
     output_rowbytes: Option<usize>,
-    metal_enabled: bool,
+    gpu_enabled: bool,
     gpu_context: GpuContext,
 ) -> GenericResult {
     effect.properties.lock().values.insert(
@@ -1478,7 +1483,7 @@ fn create_images(
         bounds: *output_rect,
         rowbytes: output_rowbytes,
         format: output_format,
-        metal_enabled,
+        gpu_enabled,
         gpu_context,
     };
     Ok(())
@@ -1680,6 +1685,15 @@ struct CommandState {
     gpu_context: GpuContext,
 }
 
+// Resolve GPU extensions weirdly use "false"/"true" strings
+fn boolean_string(value: bool) -> &'static str {
+    if value {
+        "true"
+    } else {
+        "false"
+    }
+}
+
 impl CommandState {
     fn new() -> Self {
         const VERSION_NAME: &str = env!("CARGO_PKG_VERSION");
@@ -1742,27 +1756,21 @@ impl CommandState {
                     constants::ParamHostPropSupportsParametricAnimation,
                     false.into(),
                 ),
-                // Resolve GPU extensions weirdly use "false"/"true" strings
                 (
                     constants::ImageEffectPropOpenCLRenderSupported,
-                    "false".into(),
+                    boolean_string(false).into(),
                 ),
                 (
                     constants::ImageEffectPropCudaRenderSupported,
-                    "false".into(),
+                    boolean_string(cfg!(feature = "cuda")).into(),
                 ),
                 (
                     constants::ImageEffectPropCudaStreamSupported,
-                    "false".into(),
+                    boolean_string(false).into(),
                 ),
                 (
                     constants::ImageEffectPropMetalRenderSupported,
-                    if cfg!(feature = "metal") {
-                        "true"
-                    } else {
-                        "false"
-                    }
-                    .into(),
+                    boolean_string(cfg!(feature = "metal")).into(),
                 ),
                 (constants::ImageEffectPropRenderQualityDraft, false.into()),
                 (constants::ParamHostPropMaxParameters, (-1).into()),
@@ -2038,7 +2046,7 @@ fn copy_image_to_gpu(image: &Image, gpu_context: GpuContext) -> Image {
     Image::new(
         "gpu_image",
         &image.bounds,
-        gpu_storage_from_image(image, &gpu_context),
+        gpu_context.storage_from_image(image),
         image.stride,
     )
 }
@@ -2046,11 +2054,11 @@ fn copy_image_to_gpu(image: &Image, gpu_context: GpuContext) -> Image {
 fn get_input_image(
     name: &str,
     input: &Input,
-    metal_enabled: bool,
+    gpu_enabled: bool,
     gpu_context: GpuContext,
 ) -> Result<Image> {
     read_exr(name, &input.filename, input.rowbytes, input.origin).map(|image| {
-        if metal_enabled {
+        if gpu_enabled {
             copy_image_to_gpu(&image, gpu_context)
         } else {
             image
@@ -2090,23 +2098,38 @@ impl ImageWriter for ExrWriter {
     }
 }
 
-fn check_metal_support(plugin: &LoadedPlugin, metal_enabled: bool) -> GenericResult {
-    if metal_enabled {
-        if !cfg!(feature = "metal") {
-            bail!("Metal support is not available.");
-        }
-
+fn check_gpu_support(plugin: &LoadedPlugin, gpu_enabled: bool) -> GenericResult {
+    if gpu_enabled {
         let true_string = PropertyValue::String(CString::new("true").unwrap());
-        let plugin_supports_metal = plugin
-            .descriptor
-            .lock()
-            .properties
-            .lock()
-            .get(constants::ImageEffectPropMetalRenderSupported, 0)
-            .cloned()
-            .ok();
-        if plugin_supports_metal != Some(true_string) {
-            bail!("Plugin does not support Metal renders.")
+        if cfg!(feature = "metal") {
+            let plugin_supports_metal = plugin
+                .descriptor
+                .lock()
+                .properties
+                .lock()
+                .get(constants::ImageEffectPropMetalRenderSupported, 0)
+                .cloned()
+                .ok();
+            if plugin_supports_metal != Some(true_string) {
+                bail!("Plugin does not support Metal renders.")
+            }
+        } else if cfg!(feature = "cuda") {
+            let plugin_supports_cuda = plugin
+                .descriptor
+                .lock()
+                .properties
+                .lock()
+                .get(constants::ImageEffectPropCudaRenderSupported, 0)
+                .cloned()
+                .ok();
+            if plugin_supports_cuda != Some(true_string) {
+                bail!("Plugin does not support CUDA renders.")
+            }
+        } else {
+            bail!(concat!(
+                "No GPU backend available. ",
+                "Compile with metal or cuda feature for GPU support."
+            ));
         }
     }
     Ok(())
@@ -2119,7 +2142,7 @@ fn render<W: ImageWriter + Sync>(
     layout: Option<&RenderLayout>,
     frame_range: (FrameNumber, FrameNumber),
     thread_count: u32,
-    metal_enabled: bool,
+    gpu_enabled: bool,
     state: &mut CommandState,
 ) -> GenericResult {
     let (FrameNumber(frame_min), FrameNumber(frame_limit)) = frame_range;
@@ -2129,12 +2152,12 @@ fn render<W: ImageWriter + Sync>(
 
     let instance = state.get_instance(instance_name)?;
     let plugin = state.get_plugin(&instance.plugin_name)?;
-    check_metal_support(plugin, metal_enabled)?;
+    check_gpu_support(plugin, gpu_enabled)?;
 
     let input_images = inputs
         .iter()
         .map(|(name, input)| {
-            get_input_image(name, input, metal_enabled, state.gpu_context.clone())
+            get_input_image(name, input, gpu_enabled, state.gpu_context.clone())
                 .map(|image| (name.clone(), image))
         })
         .collect::<Result<HashMap<_, _>>>()
@@ -2177,7 +2200,7 @@ fn render<W: ImageWriter + Sync>(
         project_dims.into(),
         &output_rect,
         layout.and_then(|l| l.rowbytes),
-        metal_enabled,
+        gpu_enabled,
         state.gpu_context.clone(),
     )?;
 
@@ -2215,7 +2238,14 @@ fn render<W: ImageWriter + Sync>(
                         constants::ImageEffectPropMetalCommandQueue,
                         PropertyValue::Pointer(queue).into(),
                     ),
-                    (constants::ImageEffectPropMetalEnabled, metal_enabled.into()),
+                    (
+                        constants::ImageEffectPropMetalEnabled,
+                        (cfg!(feature = "metal") && gpu_enabled).into(),
+                    ),
+                    (
+                        constants::ImageEffectPropCudaEnabled,
+                        (cfg!(feature = "cuda") && gpu_enabled).into(),
+                    ),
                 ],
             )
             .into_object();
@@ -2680,7 +2710,7 @@ fn process_command(command: &Command, state: &mut CommandState) -> GenericResult
             layout,
             frame_range,
             thread_count,
-            metal_enabled,
+            gpu_enabled,
         } => {
             if let Some(dir) = output_directory {
                 std::fs::create_dir_all(dir)?;
@@ -2694,7 +2724,7 @@ fn process_command(command: &Command, state: &mut CommandState) -> GenericResult
                 layout.as_ref(),
                 *frame_range,
                 *thread_count,
-                *metal_enabled,
+                *gpu_enabled,
                 state,
             )
             .context("Render")
