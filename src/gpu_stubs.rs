@@ -7,19 +7,16 @@ impl GpuContext {
     pub fn new() -> Self {
         Self {}
     }
-}
 
-pub fn empty_gpu_storage(
-    _format: ImageFormat,
-    _pixel_count: usize,
-    _context: &GpuContext,
-) -> Box<dyn PixelStorage> {
-    panic!("Not compiled with GPU support");
-}
+    pub fn empty_storage(
+        &self,
+        _format: ImageFormat,
+        _pixel_count: usize,
+    ) -> Box<dyn PixelStorage> {
+        panic!("Not compiled with GPU support");
+    }
 
-pub fn gpu_storage_from_image(
-    _image: &Image,
-    _context: &GpuContext,
-) -> Box<dyn PixelStorage> {
-    panic!("Not compiled with GPU support");
+    pub fn storage_from_image(&self, _image: &Image) -> Box<dyn PixelStorage> {
+        panic!("Not compiled with GPU support");
+    }
 }

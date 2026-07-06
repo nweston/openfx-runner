@@ -21,21 +21,18 @@ impl GpuContext {
     pub fn queue_ptr(&self) -> *const c_void {
         Retained::<ProtocolObject<_>>::as_ptr(&self.queue) as _
     }
-}
 
-pub fn empty_gpu_storage(
-    format: ImageFormat,
-    pixel_count: usize,
-    context: &GpuContext,
-) -> Box<dyn PixelStorage> {
-    Box::new(MetalStorage::empty(format, pixel_count, &context.device))
-}
+    pub fn empty_storage(
+        &self,
+        format: ImageFormat,
+        pixel_count: usize,
+    ) -> Box<dyn PixelStorage> {
+        Box::new(MetalStorage::empty(format, pixel_count, &self.device))
+    }
 
-pub fn gpu_storage_from_image(
-    image: &Image,
-    context: &GpuContext,
-) -> Box<dyn PixelStorage> {
-    Box::new(MetalStorage::from_image(image, &context.device))
+    pub fn storage_from_image(&self, image: &Image) -> Box<dyn PixelStorage> {
+        Box::new(MetalStorage::from_image(image, &self.device))
+    }
 }
 
 #[derive(Debug)]

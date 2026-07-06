@@ -33,12 +33,12 @@ mod suite_impls;
 #[cfg(feature = "metal")]
 mod metal;
 #[cfg(feature = "metal")]
-use metal::{empty_gpu_storage, gpu_storage_from_image, GpuContext};
+use metal::GpuContext;
 
 #[cfg(not(feature = "metal"))]
 mod gpu_stubs;
 #[cfg(not(feature = "metal"))]
-use gpu_stubs::{empty_gpu_storage, gpu_storage_from_image, GpuContext};
+use gpu_stubs::GpuContext;
 
 /// An integer frame time
 #[derive(Deserialize, Serialize, Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -553,7 +553,7 @@ impl Image {
     ) -> Self {
         let stride = get_image_stride(bounds.width(), rowbytes, format.bytes_per_pixel());
         let pixels: Box<dyn PixelStorage> = if metal_enabled {
-            empty_gpu_storage(format, stride * bounds.height(), &gpu_context)
+            gpu_context.empty_storage(format, stride * bounds.height())
         } else {
             match format {
                 ImageFormat::Alpha => {
