@@ -22,8 +22,10 @@ use std::path::PathBuf;
 use std::string::String;
 use std::sync::{Arc, LazyLock, Mutex, OnceLock};
 use std::thread;
+use std::time::Instant;
 
 mod commands;
+mod timer;
 use commands::*;
 #[macro_use]
 mod handles;
@@ -96,6 +98,8 @@ macro_rules! output {
     }
 }
 pub(crate) use {log_error, output};
+
+static TIMER: LazyLock<Mutex<Option<timer::Timer>>> = LazyLock::new(|| Mutex::new(None));
 
 #[derive(Debug)]
 /// The result of an OFX API call.
@@ -908,14 +912,20 @@ impl Plugin {
         out_args: PropertySetHandle,
     ) -> OfxStatus {
         let handle_ptr: *mut c_void = handle.into();
-        unsafe {
+        let now = Instant::now();
+        let stat = unsafe {
             (self.main_entry)(
                 action.as_ptr(),
                 handle_ptr,
                 in_args.into(),
                 out_args.into(),
             )
+        };
+        let elapsed = now.elapsed();
+        if let Some(t) = TIMER.lock().unwrap().as_mut() {
+            t.record_action(action.as_str(), elapsed);
         }
+        stat
     }
 
     fn try_call_action(
@@ -2794,6 +2804,17 @@ fn process_command(command: &Command, state: &mut CommandState) -> GenericResult
         }
         Log { message } => {
             output!("{{\"log\": \"{}\"}}", message);
+            Ok(())
+        }
+        EnableTimers { name } => {
+            *TIMER.lock().unwrap() = Some(timer::Timer::new(name.clone()));
+            Ok(())
+        }
+        FinishTimers => {
+            let timer = TIMER.lock().unwrap().take();
+            if let Some(t) = timer {
+                output!("{}", serde_json::to_string(&t)?);
+            }
             Ok(())
         }
     }

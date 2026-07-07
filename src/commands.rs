@@ -131,4 +131,11 @@ pub enum Command {
     },
     /// Write a message to the output stream
     Log { message: String },
+    /// Enable timers for plugin actions
+    /// Cumulative durations of all actions will be recorded until
+    /// FinishTimer is run
+    EnableTimers { name: String },
+    /// Print cumulative duration for each plugin action recorded, and
+    /// disable timers.
+    FinishTimers,
 }
