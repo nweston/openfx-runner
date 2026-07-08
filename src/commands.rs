@@ -55,6 +55,21 @@ fn default_frame_range() -> (FrameNumber, FrameNumber) {
     (FrameNumber(0), FrameNumber(1))
 }
 
+#[derive(Deserialize, Serialize, Copy, Clone)]
+pub enum Processing {
+    /// Process on CPU, splitting frames across the given number of
+    /// threads
+    MultiThread(u32),
+    /// Process with CUDA/Metal, in a single thread
+    Gpu,
+}
+
+impl Default for Processing {
+    fn default() -> Self {
+        Processing::MultiThread(1)
+    }
+}
+
 #[derive(Deserialize, Serialize)]
 #[serde(tag = "type")]
 pub enum Command {
@@ -80,9 +95,7 @@ pub enum Command {
         #[serde(default = "default_frame_range")]
         frame_range: (FrameNumber, FrameNumber),
         #[serde(default)]
-        thread_count: u32,
-        #[serde(default)]
-        gpu_enabled: bool,
+        processing: Processing,
     },
     /// Print params of an effect instance.
     PrintParams { instance_name: String },

@@ -2145,20 +2145,29 @@ fn check_gpu_support(plugin: &LoadedPlugin, gpu_enabled: bool) -> GenericResult 
     Ok(())
 }
 
+// Return gpu_enabled, thread_count
+fn process_settings(processing: Processing) -> (bool, u32) {
+    match processing {
+        Processing::MultiThread(n) => (false, n),
+        Processing::Gpu => (true, 1),
+    }
+}
+
 fn render<W: ImageWriter + Sync>(
     instance_name: &str,
     inputs: &HashMap<String, Input>,
     writer: &W,
     layout: Option<&RenderLayout>,
     frame_range: (FrameNumber, FrameNumber),
-    thread_count: u32,
-    gpu_enabled: bool,
+    processing: Processing,
     state: &mut CommandState,
 ) -> GenericResult {
     let (FrameNumber(frame_min), FrameNumber(frame_limit)) = frame_range;
     if frame_limit <= frame_min {
         bail!(format!("Invalid frame range {frame_min}..{frame_limit}"));
     }
+
+    let (gpu_enabled, thread_count) = process_settings(processing);
 
     let instance = state.get_instance(instance_name)?;
     let plugin = state.get_plugin(&instance.plugin_name)?;
@@ -2719,8 +2728,7 @@ fn process_command(command: &Command, state: &mut CommandState) -> GenericResult
             output_directory,
             layout,
             frame_range,
-            thread_count,
-            gpu_enabled,
+            processing,
         } => {
             if let Some(dir) = output_directory {
                 std::fs::create_dir_all(dir)?;
@@ -2733,8 +2741,7 @@ fn process_command(command: &Command, state: &mut CommandState) -> GenericResult
                 &writer,
                 layout.as_ref(),
                 *frame_range,
-                *thread_count,
-                *gpu_enabled,
+                *processing,
                 state,
             )
             .context("Render")
@@ -3332,8 +3339,7 @@ mod test {
             &writer,
             None,
             (FrameNumber(0), FrameNumber(1)),
-            1,
-            false,
+            Processing::MultiThread(1),
             &mut state,
         )
         .unwrap();
@@ -3393,8 +3399,7 @@ mod test {
                 crop_inputs_to_roi: false,
             }),
             (FrameNumber(0), FrameNumber(1)),
-            1,
-            false,
+            Processing::MultiThread(1),
             &mut state,
         )
         .unwrap();
@@ -3455,8 +3460,7 @@ mod test {
             &writer,
             None,
             (FrameNumber(0), FrameNumber(1)),
-            1,
-            false,
+            Processing::MultiThread(1),
             &mut state,
         )
         .unwrap();
@@ -3511,8 +3515,7 @@ mod test {
                 crop_inputs_to_roi: false,
             }),
             (FrameNumber(0), FrameNumber(1)),
-            1,
-            false,
+            Processing::MultiThread(1),
             &mut state,
         )
         .unwrap();
@@ -3572,8 +3575,7 @@ mod test {
                 crop_inputs_to_roi: true,
             }),
             (FrameNumber(0), FrameNumber(1)),
-            1,
-            false,
+            Processing::MultiThread(1),
             &mut state,
         )
         .unwrap();
@@ -3633,8 +3635,7 @@ mod test {
                 crop_inputs_to_roi: false,
             }),
             (FrameNumber(0), FrameNumber(1)),
-            1,
-            false,
+            Processing::MultiThread(1),
             &mut state,
         )
         .unwrap();
@@ -3684,8 +3685,7 @@ mod test {
             &writer,
             None,
             (FrameNumber(0), FrameNumber(1)),
-            1,
-            false,
+            Processing::MultiThread(1),
             &mut state,
         )
         .unwrap();
