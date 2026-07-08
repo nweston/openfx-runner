@@ -40,7 +40,7 @@ macro_rules! handle {
             where
                 H: std::hash::Hasher,
             {
-                self.0 .0.hash(state);
+                self.0.0.hash(state);
             }
         }
     };
@@ -208,8 +208,8 @@ macro_rules! impl_handle {
     ($handle_name: ident, $ofx_handle_name: ident, $object_name: ident) => {
         impl Handle for $handle_name {
             type Object = $object_name;
-            fn handle_manager(
-            ) -> &'static LazyLock<Mutex<HandleManager<Self::Object, Self>>> {
+            fn handle_manager()
+            -> &'static LazyLock<Mutex<HandleManager<Self::Object, Self>>> {
                 static MANAGER: LazyLock<
                     Mutex<HandleManager<$object_name, $handle_name>>,
                 > = LazyLock::new(|| Mutex::new(HandleManager::new()));

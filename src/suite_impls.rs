@@ -1,8 +1,8 @@
 #![allow(non_snake_case)]
 use crate::handles::{ToHandle, WithObject};
-use crate::{handles::*, Clip};
+use crate::{Clip, handles::*};
 use crate::{
-    log_error, output, FromProperty, OfxError, ParamValue, PropertySet, PropertyValue,
+    FromProperty, OfxError, ParamValue, PropertySet, PropertyValue, log_error, output,
 };
 
 #[cfg(target_os = "windows")]
@@ -22,7 +22,7 @@ use openfx_sys::{
     OfxParameterSuiteV1, OfxPropertySuiteV1,
 };
 use std::collections::HashMap;
-use std::ffi::{c_char, c_double, c_int, c_uint, c_void, CStr};
+use std::ffi::{CStr, c_char, c_double, c_int, c_uint, c_void};
 
 // ========= ImageEffectSuite =========
 extern "C" fn getPropertySet(
@@ -73,21 +73,19 @@ extern "C" fn clipGetHandle(
     clip: *mut openfx_rs::types::OfxImageClipHandle,
     propertySet: *mut openfx_rs::types::OfxPropertySetHandle,
 ) -> OfxStatus {
-    imageEffect
-        .with_object(|effect| {
-            if let Some(c) = effect.clips.get(unsafe { OfxStr::from_ptr(name) }.as_str())
-            {
-                unsafe {
-                    *clip = c.to_handle().into();
-                    if !propertySet.is_null() {
-                        *propertySet = c.lock().properties.to_handle().into();
-                    }
+    imageEffect.with_object(|effect| {
+        if let Some(c) = effect.clips.get(unsafe { OfxStr::from_ptr(name) }.as_str()) {
+            unsafe {
+                *clip = c.to_handle().into();
+                if !propertySet.is_null() {
+                    *propertySet = c.lock().properties.to_handle().into();
                 }
-                ofxstatus::OK
-            } else {
-                ofxstatus::ErrUnknown
             }
-        })
+            ofxstatus::OK
+        } else {
+            ofxstatus::ErrUnknown
+        }
+    })
 }
 
 #[allow(unused_variables)]
@@ -391,16 +389,15 @@ extern "C" fn propGetPointer(
     index: c_int,
     value: *mut *mut c_void,
 ) -> OfxStatus {
-    properties
-        .with_object(|props| {
-            get_property(
-                value,
-                props,
-                unsafe { OfxStr::from_ptr(property) },
-                index as usize,
-            )
-            .check_status("propGetPointer: ")
-        })
+    properties.with_object(|props| {
+        get_property(
+            value,
+            props,
+            unsafe { OfxStr::from_ptr(property) },
+            index as usize,
+        )
+        .check_status("propGetPointer: ")
+    })
 }
 
 extern "C" fn propGetString(
@@ -409,16 +406,15 @@ extern "C" fn propGetString(
     index: c_int,
     value: *mut *mut c_char,
 ) -> OfxStatus {
-    properties
-        .with_object(|props| {
-            get_property(
-                value,
-                props,
-                unsafe { OfxStr::from_ptr(property) },
-                index as usize,
-            )
-            .check_status("propGetString: ")
-        })
+    properties.with_object(|props| {
+        get_property(
+            value,
+            props,
+            unsafe { OfxStr::from_ptr(property) },
+            index as usize,
+        )
+        .check_status("propGetString: ")
+    })
 }
 
 extern "C" fn propGetDouble(
@@ -427,16 +423,15 @@ extern "C" fn propGetDouble(
     index: c_int,
     value: *mut c_double,
 ) -> OfxStatus {
-    properties
-        .with_object(|props| {
-            get_property(
-                value,
-                props,
-                unsafe { OfxStr::from_ptr(property) },
-                index as usize,
-            )
-            .check_status("propGetDouble: ")
-        })
+    properties.with_object(|props| {
+        get_property(
+            value,
+            props,
+            unsafe { OfxStr::from_ptr(property) },
+            index as usize,
+        )
+        .check_status("propGetDouble: ")
+    })
 }
 
 extern "C" fn propGetInt(
@@ -445,16 +440,15 @@ extern "C" fn propGetInt(
     index: c_int,
     value: *mut c_int,
 ) -> OfxStatus {
-    properties
-        .with_object(|props| {
-            get_property(
-                value,
-                props,
-                unsafe { OfxStr::from_ptr(property) },
-                index as usize,
-            )
-            .check_status("propGetInt: ")
-        })
+    properties.with_object(|props| {
+        get_property(
+            value,
+            props,
+            unsafe { OfxStr::from_ptr(property) },
+            index as usize,
+        )
+        .check_status("propGetInt: ")
+    })
 }
 
 #[allow(unused_variables)]
@@ -464,16 +458,15 @@ extern "C" fn propGetPointerN(
     count: c_int,
     value: *mut *mut c_void,
 ) -> OfxStatus {
-    properties
-        .with_object(|props| {
-            get_property_array(
-                value,
-                props,
-                unsafe { OfxStr::from_ptr(property) },
-                count as usize,
-            )
-            .check_status("propGetPointerN: ")
-        })
+    properties.with_object(|props| {
+        get_property_array(
+            value,
+            props,
+            unsafe { OfxStr::from_ptr(property) },
+            count as usize,
+        )
+        .check_status("propGetPointerN: ")
+    })
 }
 
 #[allow(unused_variables)]
@@ -483,16 +476,15 @@ extern "C" fn propGetStringN(
     count: c_int,
     value: *mut *mut c_char,
 ) -> OfxStatus {
-    properties
-        .with_object(|props| {
-            get_property_array(
-                value,
-                props,
-                unsafe { OfxStr::from_ptr(property) },
-                count as usize,
-            )
-            .check_status("propGetStringN: ")
-        })
+    properties.with_object(|props| {
+        get_property_array(
+            value,
+            props,
+            unsafe { OfxStr::from_ptr(property) },
+            count as usize,
+        )
+        .check_status("propGetStringN: ")
+    })
 }
 
 #[allow(unused_variables)]
@@ -502,16 +494,15 @@ extern "C" fn propGetDoubleN(
     count: c_int,
     value: *mut c_double,
 ) -> OfxStatus {
-    properties
-        .with_object(|props| {
-            get_property_array(
-                value,
-                props,
-                unsafe { OfxStr::from_ptr(property) },
-                count as usize,
-            )
-            .check_status("propGetDoubleN: ")
-        })
+    properties.with_object(|props| {
+        get_property_array(
+            value,
+            props,
+            unsafe { OfxStr::from_ptr(property) },
+            count as usize,
+        )
+        .check_status("propGetDoubleN: ")
+    })
 }
 
 #[allow(unused_variables)]
@@ -521,16 +512,15 @@ extern "C" fn propGetIntN(
     count: c_int,
     value: *mut c_int,
 ) -> OfxStatus {
-    properties
-        .with_object(|props| {
-            get_property_array(
-                value,
-                props,
-                unsafe { OfxStr::from_ptr(property) },
-                count as usize,
-            )
-            .check_status("propGetIntN: ")
-        })
+    properties.with_object(|props| {
+        get_property_array(
+            value,
+            props,
+            unsafe { OfxStr::from_ptr(property) },
+            count as usize,
+        )
+        .check_status("propGetIntN: ")
+    })
 }
 
 #[allow(unused_variables)]
@@ -547,16 +537,15 @@ extern "C" fn propGetDimension(
     count: *mut c_int,
 ) -> OfxStatus {
     let key = unsafe { OfxStr::from_ptr(property) };
-    properties
-        .with_object(|props| {
-            if let Some(values) = props.values.get(key.as_str()) {
-                unsafe { *count = values.0.len() as i32 }
-                ofxstatus::OK
-            } else {
-                log_error!("propGetDimension: {} not found in {}", key, props.name);
-                ofxstatus::ErrUnknown
-            }
-        })
+    properties.with_object(|props| {
+        if let Some(values) = props.values.get(key.as_str()) {
+            unsafe { *count = values.0.len() as i32 }
+            ofxstatus::OK
+        } else {
+            log_error!("propGetDimension: {} not found in {}", key, props.name);
+            ofxstatus::ErrUnknown
+        }
+    })
 }
 
 pub const PROPERTY_SUITE: OfxPropertySuiteV1 = OfxPropertySuiteV1 {
@@ -604,20 +593,19 @@ extern "C" fn paramGetHandle(
     param: *mut openfx_rs::types::OfxParamHandle,
     propertySet: *mut openfx_rs::types::OfxPropertySetHandle,
 ) -> OfxStatus {
-    paramSet
-        .with_object(|ps| {
-            if let Some(p) = ps.params.get(unsafe { OfxStr::from_ptr(name) }.as_str()) {
-                unsafe {
-                    *param = p.to_handle().into();
-                    if !propertySet.is_null() {
-                        *propertySet = p.lock().properties.to_handle().into();
-                    }
+    paramSet.with_object(|ps| {
+        if let Some(p) = ps.params.get(unsafe { OfxStr::from_ptr(name) }.as_str()) {
+            unsafe {
+                *param = p.to_handle().into();
+                if !propertySet.is_null() {
+                    *propertySet = p.lock().properties.to_handle().into();
                 }
-                ofxstatus::OK
-            } else {
-                ofxstatus::ErrUnknown
             }
-        })
+            ofxstatus::OK
+        } else {
+            ofxstatus::ErrUnknown
+        }
+    })
 }
 
 extern "C" fn paramSetGetPropertySet(
@@ -943,15 +931,14 @@ extern "C" fn message_impl(
     // TODO: we're assuming handle is a valid effect instance
     // handle. The spec also allows it to be an effect descriptor
     // handle, or null.
-    ImageEffectHandle::from(handle)
-        .with_object(|effect| {
-            // Consume a configured response from the effect instance, or
-            // if there are no responses return OK
-            effect
-                .message_suite_responses
-                .pop()
-                .unwrap_or(ofxstatus::OK)
-        })
+    ImageEffectHandle::from(handle).with_object(|effect| {
+        // Consume a configured response from the effect instance, or
+        // if there are no responses return OK
+        effect
+            .message_suite_responses
+            .pop()
+            .unwrap_or(ofxstatus::OK)
+    })
 }
 
 pub const MESSAGE_SUITE: OfxMessageSuiteV1 = OfxMessageSuiteV1 {

@@ -1,8 +1,8 @@
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use clap::{Parser, Subcommand};
 use exr::prelude::{
-    read, read_first_rgba_layer_from_file, write_rgba_file, ReadChannels, ReadLayers,
-    ReadSpecificChannel, WritableImage,
+    ReadChannels, ReadLayers, ReadSpecificChannel, WritableImage, read,
+    read_first_rgba_layer_from_file, write_rgba_file,
 };
 use openfx_rs::constants;
 use openfx_rs::constants::ofxstatus;
@@ -14,7 +14,7 @@ use std::cmp::{max, min};
 use std::collections::HashMap;
 use std::env;
 use std::error::Error;
-use std::ffi::{c_char, c_int, c_void, CString};
+use std::ffi::{CString, c_char, c_int, c_void};
 use std::fs;
 use std::fs::File;
 use std::io::Write;
@@ -863,7 +863,9 @@ impl ImageEffect {
                 .lock()
                 .get_type::<i32>(constants::ImageClipPropOptional, 0)
                 .unwrap_or(0);
-            if optional == 0 && let ClipImages::NoImage = c.images {
+            if optional == 0
+                && let ClipImages::NoImage = c.images
+            {
                 bail!("No image for required clip {}", name);
             }
         }
@@ -1695,11 +1697,7 @@ struct CommandState {
 
 // Resolve GPU extensions weirdly use "false"/"true" strings
 fn boolean_string(value: bool) -> &'static str {
-    if value {
-        "true"
-    } else {
-        "false"
-    }
+    if value { "true" } else { "false" }
 }
 
 impl CommandState {
@@ -3065,10 +3063,9 @@ mod test {
 
         if cfg!(target_os = "linux") {
             assert_eq!(
-            result.unwrap_err()
-                .to_string(),
-            "test/NoExe.ofx.bundle/Contents/Linux-x86-64/test.ofx: cannot open shared object file: No such file or directory"
-        );
+                result.unwrap_err().to_string(),
+                "test/NoExe.ofx.bundle/Contents/Linux-x86-64/test.ofx: cannot open shared object file: No such file or directory"
+            );
         } else {
             // Specific error message will vary depending on OS,
             // the important thing is that it fails
