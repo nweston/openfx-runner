@@ -113,7 +113,7 @@ impl PixelStorage for MetalStorage {
         self.format
     }
 
-    fn as_pixels(&self) -> ImagePixels {
+    fn as_pixels(&self) -> ImagePixels<'_> {
         let ptr = self.buffer.contents().as_ptr();
         unsafe {
             match self.format {

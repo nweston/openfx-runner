@@ -85,7 +85,7 @@ impl PixelStorage for CudaStorage {
         self.format
     }
 
-    fn as_pixels(&self) -> ImagePixels {
+    fn as_pixels(&self) -> ImagePixels<'_> {
         let host_data = self.buffer.as_host_vec().unwrap();
         let ptr = host_data.as_ptr();
         unsafe {

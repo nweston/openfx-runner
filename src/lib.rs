@@ -446,7 +446,7 @@ trait PixelStorage: Send + std::fmt::Debug {
     fn as_mut_ptr(&mut self) -> *mut c_void;
     unsafe fn offset_ptr(&self, byte_offset: isize) -> *const c_void;
     fn format(&self) -> ImageFormat;
-    fn as_pixels(&self) -> ImagePixels;
+    fn as_pixels(&self) -> ImagePixels<'_>;
 }
 
 #[derive(Debug)]
@@ -469,7 +469,7 @@ impl PixelStorage for RgbaVecStorage {
         ImageFormat::Rgba
     }
 
-    fn as_pixels(&self) -> ImagePixels {
+    fn as_pixels(&self) -> ImagePixels<'_> {
         ImagePixels::Rgba(&self.0)
     }
 }
@@ -494,7 +494,7 @@ impl PixelStorage for AlphaVecStorage {
         ImageFormat::Alpha
     }
 
-    fn as_pixels(&self) -> ImagePixels {
+    fn as_pixels(&self) -> ImagePixels<'_> {
         ImagePixels::Alpha(&self.0)
     }
 }
@@ -863,10 +863,8 @@ impl ImageEffect {
                 .lock()
                 .get_type::<i32>(constants::ImageClipPropOptional, 0)
                 .unwrap_or(0);
-            if optional == 0 {
-                if let ClipImages::NoImage = c.images {
-                    bail!("No image for required clip {}", name);
-                }
+            if optional == 0 && let ClipImages::NoImage = c.images {
+                bail!("No image for required clip {}", name);
             }
         }
         Ok(())
